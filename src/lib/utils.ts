@@ -2,17 +2,22 @@ export const getGenderedTitle = (title: string, gender?: 'male' | 'female' | 'ot
   if (!title) return '';
   if (!gender || gender === 'other') return title;
 
+  let processedTitle = title;
+
+  // Handle common Polish patterns like "Magazynier (k/m)" first to avoid incorrect splitting by slash
+  const genderMarkers = [/\s*\(k\/m\)\s*/i, /\s*\(m\/k\)\s*/i];
+  for (const marker of genderMarkers) {
+    if (marker.test(processedTitle)) {
+      return processedTitle.replace(marker, '').trim();
+    }
+  }
+
   // Pattern: "Operator / Operatorka" or "Operator/Operatorka" or "Operator (k/m)"
   // Split by slash or backslash
-  const parts = title.split(/[\/\\]/);
+  const parts = processedTitle.split(/[\/\\]/);
   if (parts.length === 2) {
     return gender === 'male' ? parts[0].trim() : parts[1].trim();
   }
 
-  // Handle common Polish patterns like "Magazynier (k/m)"
-  if (title.includes('(k/m)') || title.includes('(K/M)') || title.includes('(m/k)') || title.includes('(M/K)')) {
-     return title.replace(/\s*\(k\/m\)\s*/i, '').replace(/\s*\(m\/k\)\s*/i, '').trim();
-  }
-
-  return title;
+  return processedTitle;
 };
