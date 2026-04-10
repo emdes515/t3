@@ -1393,41 +1393,48 @@ export const MasterProfile: React.FC = () => {
                 )}
               </AnimatePresence>
               
-              {allCategories.map((category) => {
-                    const categorySkills = localProfile?.skills?.filter(s => s.category.toLowerCase() === category.toLowerCase()) || [];
-                    return (
-                      <div key={category} className="space-y-6">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs uppercase text-black/40 font-bold tracking-[0.2em]">
-                            {defaultCategories.includes(category) ? t(category as any, appLanguage) : category} {t('skills', appLanguage)}
-                          </h3>
+              {(() => {
+                const skillsByCategory = (localProfile?.skills || []).reduce((acc, skill, index) => {
+                  const cat = skill.category.toLowerCase();
+                  if (!acc[cat]) acc[cat] = [];
+                  acc[cat].push({ skill, index });
+                  return acc;
+                }, {} as Record<string, { skill: any, index: number }[]>);
+
+                return allCategories.map((category) => {
+                  const categorySkillsWithIdx = skillsByCategory[category.toLowerCase()] || [];
+                  return (
+                    <div key={category} className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs uppercase text-black/40 font-bold tracking-[0.2em]">
+                          {defaultCategories.includes(category) ? t(category as any, appLanguage) : category} {t('skills', appLanguage)}
+                        </h3>
+                        <button
+                          onClick={() => {
+                            handleLocalUpdate({ skills: [...(localProfile?.skills || []), { name: 'New Skill', category, level: 'Intermediate', description: '' }] });
+                          }}
+                          className="text-xs text-primary hover:underline font-bold"
+                        >
+                          + {t('addSkill', appLanguage)}
+                        </button>
+                      </div>
+
+                      {categorySkillsWithIdx.length === 0 ? (
+                        <div className="glass rounded-2xl p-8 border-dashed border-2 border-black/5 flex flex-col items-center justify-center space-y-4">
+                          <p className="text-black/40 text-sm">{t('noSectionAddedYet', appLanguage, { section: category })}</p>
                           <button 
                             onClick={() => {
                               handleLocalUpdate({ skills: [...(localProfile?.skills || []), { name: 'New Skill', category, level: 'Intermediate', description: '' }] });
                             }}
-                            className="text-xs text-primary hover:underline font-bold"
+                            className="px-4 py-2 bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-all text-xs font-bold"
                           >
                             + {t('addSkill', appLanguage)}
                           </button>
                         </div>
-                        
-                        {categorySkills.length === 0 ? (
-                          <div className="glass rounded-2xl p-8 border-dashed border-2 border-black/5 flex flex-col items-center justify-center space-y-4">
-                            <p className="text-black/40 text-sm">{t('noSectionAddedYet', appLanguage, { section: category })}</p>
-                            <button 
-                              onClick={() => {
-                                handleLocalUpdate({ skills: [...(localProfile?.skills || []), { name: 'New Skill', category, level: 'Intermediate', description: '' }] });
-                              }}
-                              className="px-4 py-2 bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-all text-xs font-bold"
-                            >
-                              + {t('addSkill', appLanguage)}
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {categorySkills.map((skill, idx) => {
-                              const skillIdx = localProfile.skills.findIndex(s => s === skill);
-                              return (
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {categorySkillsWithIdx.map(({ skill, index: skillIdx }, idx) => {
+                            return (
                                 <div key={idx} className="glass rounded-2xl p-6 space-y-4 group hover:border-primary/50 transition-all">
                                   <div className="flex items-center justify-between">
                                     <div className="flex-1">
@@ -1497,7 +1504,8 @@ export const MasterProfile: React.FC = () => {
                         )}
                       </div>
                     );
-                  })}
+                  });
+              })()}
             <SectionAudit section="skills" auditData={localProfile?.auditData} appLanguage={appLanguage} onDismiss={dismissTip} />
           </section>
         )}
