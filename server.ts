@@ -10,7 +10,22 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
-  app.use(cors());
+
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+    : (process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:5173'] : []);
+
+  app.use(cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      // or requests from allowed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  }));
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
