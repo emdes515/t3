@@ -177,6 +177,15 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'tailor-cv-storage',
+      partialize: (state) => ({
+        ...state,
+        isAuditingProfile: false,
+        cvCreatorState: state.cvCreatorState ? {
+          ...state.cvCreatorState,
+          isAnalyzing: false,
+          isTailoring: false
+        } : null
+      }),
     }
   )
 );
