@@ -127,7 +127,7 @@ function AppContent() {
         }}
       />
       {view === 'profile' && <MasterProfile />}
-      {view === 'creator' && <CvCreator initialJobData={initialJobData} />}
+      {view === 'creator' && <CvCreator initialData={initialJobData} />}
       {view === 'tracker' && <Tracker />}
       {view === 'settings' && <Settings />}
     </Layout>
