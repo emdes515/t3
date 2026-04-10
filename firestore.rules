@@ -132,7 +132,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
+      allow read: if request.auth != null && request.auth.uid == userId;
       allow create: if isOwner(userId) &&
                     hasRequiredFields(['uid', 'personalInfo']) &&
                     isValidUser(request.resource.data) &&
