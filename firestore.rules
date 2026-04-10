@@ -115,6 +115,13 @@ service cloud.firestore {
              (!('tailoredCv' in data) || data.tailoredCv is map);
     }
 
+    function isValidJobCache(data) {
+      return data.url is string &&
+             data.url.size() <= 1000 &&
+             data.timestamp is number &&
+             data.data is map;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -151,7 +158,10 @@ service cloud.firestore {
 
     match /job_cache/{hashId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated() &&
+                            hasRequiredFields(['url', 'timestamp', 'data']) &&
+                            isValidJobCache(request.resource.data);
+      allow delete: if false;
     }
   }
 }
