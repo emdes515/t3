@@ -92,6 +92,19 @@ export interface UserProfile {
   };
 }
 
+export interface RadarJob {
+  url: string;
+  jobInfo: any;
+  matchScore: number;
+  summary: string;
+}
+
+export interface RadarState {
+  isScanning: boolean;
+  lastScanDate: string | null;
+  jobs: RadarJob[];
+}
+
 export interface CvCreatorState {
   step: number;
   jobUrl: string;
@@ -114,12 +127,14 @@ interface AppState {
   profile: UserProfile | null;
   appLanguage: string;
   cvCreatorState: CvCreatorState | null;
+  radarState: RadarState;
   isAuditingProfile: boolean;
   setProfile: (profile: UserProfile) => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   setAppLanguage: (lang: string) => void;
   setCvCreatorState: (state: Partial<CvCreatorState> | null) => void;
   resetCvCreator: () => void;
+  setRadarState: (state: Partial<RadarState>) => void;
   setIsAuditingProfile: (isAuditing: boolean) => void;
   performProfileAudit: (apiKey: string, profile: UserProfile) => Promise<void>;
 }
@@ -147,6 +162,12 @@ export const createInitialProfile = (user: any): UserProfile => ({
   projects: [],
 });
 
+const defaultRadarState: RadarState = {
+  isScanning: false,
+  lastScanDate: null,
+  jobs: []
+};
+
 const defaultCvCreatorState: CvCreatorState = {
   step: 1,
   jobUrl: '',
@@ -167,6 +188,7 @@ export const useStore = create<AppState>()(
       profile: null,
       appLanguage: getBrowserLanguage(),
       cvCreatorState: defaultCvCreatorState,
+      radarState: defaultRadarState,
       isAuditingProfile: false,
       setProfile: (profile) => set({ profile }),
       updateProfile: (updates) => set((state) => ({
@@ -177,6 +199,9 @@ export const useStore = create<AppState>()(
         cvCreatorState: state === null ? defaultCvCreatorState : { ...prev.cvCreatorState, ...state } as CvCreatorState
       })),
       resetCvCreator: () => set({ cvCreatorState: defaultCvCreatorState }),
+      setRadarState: (state) => set((prev) => ({
+        radarState: { ...prev.radarState, ...state }
+      })),
       setIsAuditingProfile: (isAuditing) => set({ isAuditingProfile: isAuditing }),
       performProfileAudit: async (apiKey: string, profile: UserProfile) => {
         set({ isAuditingProfile: true });
@@ -202,7 +227,11 @@ export const useStore = create<AppState>()(
           ...state.cvCreatorState,
           isAnalyzing: false,
           isTailoring: false
-        } : null
+        } : null,
+        radarState: {
+          ...state.radarState,
+          isScanning: false
+        }
       }),
     }
   )

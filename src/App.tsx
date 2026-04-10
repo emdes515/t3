@@ -6,6 +6,7 @@ import { useStore, createInitialProfile } from './store/useStore';
 import { LandingPage } from './components/LandingPage';
 import { MasterProfile } from './components/MasterProfile';
 import { CvCreator } from './components/CvCreator';
+import { JobRadar } from './components/JobRadar';
 import { Tracker } from './components/Tracker';
 import { Settings } from './components/Settings';
 import { Layout } from './components/Layout';
@@ -24,7 +25,7 @@ export default function App() {
 function AppContent() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'landing' | 'profile' | 'creator' | 'tracker' | 'settings'>('landing');
+  const [view, setView] = useState<'landing' | 'profile' | 'radar' | 'creator' | 'tracker' | 'settings'>('landing');
   const [initialJobData, setInitialJobData] = useState<any>(null);
   const { setProfile } = useStore();
 
@@ -122,6 +123,7 @@ function AppContent() {
         }}
       />
       {view === 'profile' && <MasterProfile />}
+      {view === 'radar' && <JobRadar onApply={() => setView('creator')} />}
       {view === 'creator' && <CvCreator initialData={initialJobData} />}
       {view === 'tracker' && <Tracker />}
       {view === 'settings' && <Settings />}
