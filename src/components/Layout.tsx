@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, FileText, LayoutDashboard, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { User, FileText, LayoutDashboard, Radar, Settings as SettingsIcon, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { t } from '../i18n';
@@ -17,6 +17,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, 
 
   const navItems = [
     { id: 'profile', label: t('masterProfile', appLanguage), icon: User },
+    { id: 'radar', label: 'Radar Ofert', icon: Radar },
     { id: 'creator', label: t('cvCreator', appLanguage), icon: FileText },
     { id: 'tracker', label: t('tracker', appLanguage), icon: LayoutDashboard },
     { id: 'settings', label: t('settings', appLanguage), icon: SettingsIcon },
