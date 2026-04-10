@@ -105,7 +105,12 @@ export const fetchJobFromURL = async (apiKey: string, url: string) => {
   // Pillar 1: Smart Scraping Pipeline (Jina Reader API Fallback)
   let jobText = "";
   try {
-    const jinaResponse = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    const jinaResponse = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
     if (jinaResponse.ok) {
       jobText = await jinaResponse.text();
     }

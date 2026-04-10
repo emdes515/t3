@@ -46,6 +46,14 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
 
   const [localTailoredData, setLocalTailoredData] = useState<any>(initialData?.tailoredCv || null);
   const tailoredData = initialData ? localTailoredData : (cvCreatorState?.tailoredData || null);
+  const [debouncedTailoredData, setDebouncedTailoredData] = useState<any>(tailoredData);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedTailoredData(tailoredData);
+    }, 1000);
+    return () => clearTimeout(handler);
+  }, [tailoredData]);
 
   const [isTranslating, setIsTranslating] = useState(false);
   const [showPhoto, setShowPhoto] = useState(true);
@@ -110,19 +118,21 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
   }, [tailoredData, applicationId, debouncedSaveCv]);
 
   const handleReset = () => {
-    setCvCreatorState({
-      step: 1,
-      jobUrl: '',
-      manualJobText: '',
-      isManual: false,
-      jobInfo: null,
-      tailoredData: null,
-      targetLanguage: 'auto',
-      activeTab: 'analysis',
-      selectedTemplate: 'modern',
-      isAnalyzing: false,
-      isTailoring: false
-    });
+    if (window.confirm(appLanguage === 'pl' ? 'Czy na pewno chcesz zacząć od nowa? Niezapisane zmiany zostaną utracone.' : 'Are you sure you want to start over? Unsaved changes will be lost.')) {
+      setCvCreatorState({
+        step: 1,
+        jobUrl: '',
+        manualJobText: '',
+        isManual: false,
+        jobInfo: null,
+        tailoredData: null,
+        targetLanguage: 'auto',
+        activeTab: 'analysis',
+        selectedTemplate: 'modern',
+        isAnalyzing: false,
+        isTailoring: false
+      });
+    }
   };
 
   useEffect(() => {
@@ -662,7 +672,7 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                         <FileText size={20} />
                       </button>
                       <PDFDownloadLink
-                        document={activeTab === 'cv' ? (selectedTemplate === 'modern' ? <ModernTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} /> : <ClassicTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} />) : (selectedTemplate === 'modern' ? <ModernCoverLetterTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} /> : <ClassicCoverLetterTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} />)}
+                        document={activeTab === 'cv' ? (selectedTemplate === 'modern' ? <ModernTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} /> : <ClassicTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} />) : (selectedTemplate === 'modern' ? <ModernCoverLetterTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} /> : <ClassicCoverLetterTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} />)}
                         fileName={`${activeTab === 'cv' ? 'CV' : 'CoverLetter'}_${jobInfo?.basic_info?.company_name || jobInfo?.company}_${profile?.personalInfo?.fullName}.pdf`}
                         className="p-3 bg-[var(--color-accent)] text-white rounded-xl hover:scale-110 transition-all shadow-lg shadow-[var(--color-accent)]/20"
                         title="Download PDF"
@@ -855,6 +865,23 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                                   Dopasowanie: {exp.relevanceScore}%
                                 </span>
                               )}
+                              {exp.modifiedByAI && !exp.omit && (
+                                <button
+                                  onClick={() => {
+                                    const originalExp = profile?.experience?.find((e: any) => e.id === exp.id);
+                                    if (originalExp) {
+                                      updateExperienceField(idx, 'description', originalExp.description);
+                                      updateExperienceField(idx, 'modifiedByAI', false);
+                                      notify.success(appLanguage === 'pl' ? 'Przywrócono oryginał' : 'Reverted to original');
+                                    }
+                                  }}
+                                  className="text-xs px-3 py-1 rounded-lg font-bold transition-colors bg-yellow-500/10 text-yellow-700 hover:bg-yellow-500/20 flex items-center space-x-1"
+                                  title="Przywróć oryginał (Revert)"
+                                >
+                                  <Undo size={12} />
+                                  <span>{appLanguage === 'pl' ? 'Odrzuć zmiany AI' : 'Revert AI changes'}</span>
+                                </button>
+                              )}
                               <button
                                 onClick={() => updateExperienceField(idx, 'omit', !exp.omit)}
                                 className={`text-xs px-3 py-1 rounded-lg font-bold transition-colors ${exp.omit ? 'bg-green-500 text-white' : 'bg-red-500/10 text-red-600 hover:bg-red-500/20'}`}
@@ -888,21 +915,6 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                                   >
                                     <ThumbsUp size={12} />
                                     <span className="text-[10px] font-bold">Akceptuj</span>
-                                  </button>
-                                  <div className="w-px h-3 bg-yellow-300"></div>
-                                  <button
-                                    onClick={() => {
-                                      const originalExp = profile.experience.find((e: any) => e.id === exp.id);
-                                      if (originalExp) {
-                                        updateExperienceField(idx, 'description', originalExp.description);
-                                        updateExperienceField(idx, 'modifiedByAI', false);
-                                      }
-                                    }}
-                                    className="flex items-center space-x-1 px-2 py-1 hover:bg-yellow-200 rounded-lg transition-colors text-yellow-700"
-                                    title="Przywróć oryginał"
-                                  >
-                                    <Undo size={12} />
-                                    <span className="text-[10px] font-bold">Przywróć</span>
                                   </button>
                                 </div>
                               </div>
@@ -1134,7 +1146,7 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                       </button>
                       <div className="w-px h-4 bg-black/10"></div>
                       <PDFDownloadLink
-                        document={activeTab !== 'coverLetter' ? (selectedTemplate === 'modern' ? <ModernTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} /> : <ClassicTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} />) : (selectedTemplate === 'modern' ? <ModernCoverLetterTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} /> : <ClassicCoverLetterTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} />)}
+                        document={activeTab !== 'coverLetter' ? (selectedTemplate === 'modern' ? <ModernTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} /> : <ClassicTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} />) : (selectedTemplate === 'modern' ? <ModernCoverLetterTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} /> : <ClassicCoverLetterTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} />)}
                         fileName={`${activeTab !== 'coverLetter' ? 'CV' : 'CoverLetter'}_${jobInfo?.basic_info?.company_name || jobInfo?.company}_${profile?.personalInfo?.fullName}.pdf`}
                         className="p-1.5 text-black/60 hover:text-black hover:bg-black/5 rounded-lg transition-colors"
                         title={t('downloadPdf', appLanguage)}
@@ -1168,12 +1180,12 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                       document={
                         activeTab !== 'coverLetter' ? (
                           selectedTemplate === 'modern' ? 
-                            <ModernTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} /> : 
-                            <ClassicTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} />
+                            <ModernTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} /> :
+                            <ClassicTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} showSkillLevels={showSkillLevels} />
                         ) : (
                           selectedTemplate === 'modern' ?
-                            <ModernCoverLetterTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} /> :
-                            <ClassicCoverLetterTemplate data={tailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} />
+                            <ModernCoverLetterTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} /> :
+                            <ClassicCoverLetterTemplate data={debouncedTailoredData} profile={profile} jobInfo={jobInfo} appLanguage={appLanguage} showPhoto={showPhoto} />
                         )
                       }
                     />
