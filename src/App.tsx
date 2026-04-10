@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, getDocFromServer } from 'firebase/firestore';
-import { useStore } from './store/useStore';
+import { useStore, createInitialProfile } from './store/useStore';
 import { LandingPage } from './components/LandingPage';
 import { MasterProfile } from './components/MasterProfile';
 import { CvCreator } from './components/CvCreator';
@@ -52,27 +52,22 @@ function AppContent() {
           if (docSnap.exists()) {
             setProfile(docSnap.data() as any);
           } else {
-            const initialProfile = {
-              uid: user.uid,
-              personalInfo: { 
-                fullName: user.displayName, 
-                email: user.email,
-                photoURL: user.photoURL 
-              },
-              experience: [],
-              education: [],
-              skills: [],
-              certifications: [],
-              languages: [],
-              courses: [],
-              projects: [],
-              socialLinks: []
-            };
-            await setDoc(docRef, initialProfile);
+            const initialProfile = createInitialProfile(user);
+            try {
+              await setDoc(docRef, initialProfile);
+            } catch (error) {
+              console.warn('Failed to save initial profile to Firestore, proceeding with local state:', error);
+            }
             setProfile(initialProfile);
           }
         } catch (error) {
-          handleFirestoreError(error, OperationType.GET, path);
+          if (error instanceof Error && error.message.includes('ERR_BLOCKED_BY_CLIENT')) {
+            console.warn('Firestore fetch blocked by client (e.g., adblocker). Using fallback local state.');
+            const fallbackProfile = createInitialProfile(user);
+            setProfile(fallbackProfile);
+          } else {
+            handleFirestoreError(error, OperationType.GET, path);
+          }
         }
         if (view === 'landing') setView('profile');
       } else {

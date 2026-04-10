@@ -130,6 +130,23 @@ const getBrowserLanguage = () => {
   return ['en', 'pl'].includes(lang) ? lang : 'en';
 };
 
+export const createInitialProfile = (user: any): UserProfile => ({
+  uid: user.uid,
+  personalInfo: {
+    fullName: user.displayName || '',
+    email: user.email || '',
+    photoURL: user.photoURL || '',
+    socialLinks: [],
+  },
+  experience: [],
+  education: [],
+  skills: [],
+  certifications: [],
+  languages: [],
+  courses: [],
+  projects: [],
+});
+
 const defaultCvCreatorState: CvCreatorState = {
   step: 1,
   jobUrl: '',
