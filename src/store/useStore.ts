@@ -13,6 +13,7 @@ export interface UserProfile {
     photoURL?: string;
     bio?: string;
     gender?: 'male' | 'female' | 'other';
+    jobTitle?: string;
     additionalInfo?: string;
     linkedin?: string;
     github?: string;
