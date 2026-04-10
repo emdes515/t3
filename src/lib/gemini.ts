@@ -30,7 +30,7 @@ export const JobSchema = z.object({
 const systemInstruction = `You are an elite, highly precise Data Extraction Algorithm specializing in HR and Recruitment. Your ONLY task is to deeply analyze the provided Job Offer URL or text and extract explicitly stated facts with maximum precision.
 
 🚨 ANTI-HALLUCINATION PROTOCOL - READ CAREFULLY: 🚨
-DO NOT INFER OR GUESS. If a piece of information (e.g., salary, specific skill, company culture) is NOT explicitly written in the main body of the job description, you MUST return null or an empty array []. Do not make assumptions based on the job title.
+Zasada Faktów: "Jeśli czegoś nie ma w tekście – zwróć null. Nie domyślaj się, że jeśli to programista, to na pewno zna Git. Musi to być napisane w ogłoszeniu."
 IGNORE NOISE. Job boards contain noise. You MUST IGNORE:
 "Similar Jobs" / "Inne oferty"
 "People also searched for"
@@ -40,9 +40,9 @@ EXACT MATCHING. When listing Hard Skills, extract the exact tools/technologies m
 CRITICAL: You MUST extract the \`job_title\` and \`company_name\`. Look carefully at the very beginning of the text, headers, metadata, or the "About the company" section. If it's a job board, the company name is usually prominently displayed next to or below the job title. If the company name is hidden (e.g., "Confidential Client"), output "Confidential".
 
 MAPPING INSTRUCTIONS (Strictly separate these sections):
-1. RESPONSIBILITIES ("Twój zakres obowiązków", "Będziesz odpowiadać za", "What you will do"): Map strictly to \`context.main_responsibilities\`. Extract EVERY single responsibility listed. Be detailed.
-2. MUST-HAVE REQUIREMENTS ("Nasze wymagania", "Oczekujemy", "Wymagania pracodawcy", "Requirements"): Map strictly to \`skills.must_have\`. Extract EVERY single requirement, including soft skills, hard skills, languages, and experience levels. Do not summarize too much, keep the original precision.
-3. NICE-TO-HAVE ("Mile widziane", "Dodatkowym atutem będzie", "Nice to have"): Map strictly to \`skills.nice_to_have\`.
+1. RESPONSIBILITIES / DAILY TASKS ("Twój zakres obowiązków", "Będziesz odpowiadać za", "What you will do", "Codzienne zadania", "daily_tasks"): Map strictly to \`context.main_responsibilities\`. Extract EVERY single responsibility listed. Be detailed.
+2. MUST-HAVE REQUIREMENTS ("Nasze wymagania", "Oczekujemy", "Wymagania pracodawcy", "Requirements", "must_have"): Twardy Podział - Oddzielenie wymagań kategorycznych od dodatkowych. Map strictly to \`skills.must_have\`. Extract EVERY single requirement, including soft skills, hard skills, languages, and experience levels. Do not summarize too much, keep the original precision.
+3. NICE-TO-HAVE ("Mile widziane", "Dodatkowym atutem będzie", "Nice to have", "nice_to_have"): Map strictly to \`skills.nice_to_have\`.
 4. COMPANY INFO ("O nas", "Kim jesteśmy", "O firmie", "Oferujemy", "About us"): Meticulously extract company details into the \`company\` object.
 
 FEW-SHOT EXAMPLE:
@@ -113,39 +113,28 @@ export const fetchJobFromURL = async (apiKey: string, url: string) => {
     clearTimeout(timeoutId);
     if (jinaResponse.ok) {
       jobText = await jinaResponse.text();
+    } else {
+      throw new Error("JINA_BLOCKED");
     }
   } catch (err) {
-    console.warn("Jina Reader failed, falling back to Gemini Grounding", err);
+    console.warn("Jina Reader failed", err);
+    throw new Error("JINA_BLOCKED");
   }
 
-  let response;
-  
-  if (jobText && jobText.length > 100) {
-    // We have text from Jina, use it directly without googleSearch to save time/tokens
-    response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: `Przeanalizuj treść ogłoszenia o pracę:\n\n${jobText}`,
-      config: {
-        temperature: 0.1,
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema
-      }
-    });
-  } else {
-    // Fallback to Google Grounding
-    response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: `Przeanalizuj treść ogłoszenia o pracę pod tym adresem: ${url}`,
-      config: {
-        temperature: 0.1,
-        systemInstruction,
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema
-      }
-    });
+  if (!jobText || jobText.length < 50) {
+    throw new Error("JINA_BLOCKED");
   }
+
+  const response = await ai.models.generateContent({
+    model: "gemini-1.5-flash",
+    contents: `Przeanalizuj treść ogłoszenia o pracę:\n\n${jobText}`,
+    config: {
+      temperature: 0.0,
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseSchema
+    }
+  });
 
   let responseText = response.text;
   
@@ -173,10 +162,10 @@ export const fetchJobFromURL = async (apiKey: string, url: string) => {
 export const analyzeJobDescription = async (apiKey: string, text: string) => {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+    model: "gemini-1.5-flash",
     contents: `Analyze this job description and extract key information in JSON format: ${text}`,
     config: {
-      temperature: 0.1,
+      temperature: 0.0,
       systemInstruction,
       responseMimeType: "application/json",
       responseSchema
@@ -365,9 +354,10 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+    model: "gemini-1.5-flash",
     contents: prompt,
     config: {
+      temperature: 0.0,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,

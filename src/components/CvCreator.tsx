@@ -61,6 +61,7 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
   const [isUpdating, setIsUpdating] = useState(false);
   const [showLowConfidenceModal, setShowLowConfidenceModal] = useState(false);
   const [showInvalidJobModal, setShowInvalidJobModal] = useState(false);
+  const [showNotAJobModal, setShowNotAJobModal] = useState(false);
   const [editorMode, setEditorMode] = useState<'form' | 'pdf'>('form');
   const [progressMessage, setProgressMessage] = useState('');
 
@@ -71,19 +72,20 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
   // Labor Illusion Effect
   useEffect(() => {
     if (isAnalyzing) {
-      const messages = [
-        "Łączę ze stroną...",
-        "Czytam wymagania stanowiska...",
-        "Analizuję profil pracodawcy...",
-        "Strukturyzuję dane..."
-      ];
-      let i = 0;
-      setProgressMessage(messages[0]);
-      const interval = setInterval(() => {
-        i = (i + 1) % messages.length;
-        setProgressMessage(messages[i]);
+      setProgressMessage("Nawiązywanie bezpiecznego połączenia z portalem...");
+
+      const timer1 = setTimeout(() => {
+        setProgressMessage("Oczyszczanie strony z szumu i reklam...");
       }, 2000);
-      return () => clearInterval(interval);
+
+      const timer2 = setTimeout(() => {
+        setProgressMessage("AI analizuje wymagania i wyciąga słowa kluczowe...");
+      }, 5000);
+
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
     } else {
       setProgressMessage('');
     }
@@ -164,8 +166,8 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
 
     setCvCreatorState({ isAnalyzing: true, jobUrl, manualJobText, isManual });
 
+    let analyzed;
     try {
-      let analyzed;
       if (isManual) {
         analyzed = await analyzeJobDescription(profile.geminiApiKey, manualJobText);
       } else {
@@ -199,7 +201,7 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
       }
       
       if (analyzed?.meta?.is_real_job_offer === false) {
-        setShowInvalidJobModal(true);
+        setShowNotAJobModal(true);
         setCvCreatorState({ isAnalyzing: false, isManual: true });
         return;
       }
@@ -209,14 +211,67 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
         setShowPhoto(false);
       }
       
-      setCvCreatorState({ isAnalyzing: false, step: 2, jobInfo: analyzed });
-    } catch (error) {
+      // Store analyzed job info so background tailoring can use it if needed or for reference
+      setCvCreatorState({ jobInfo: analyzed });
+
+    } catch (error: any) {
       console.error('Analysis error:', error);
-      notify.error(t('analysisFailed', appLanguage));
+      if (error.message === 'JINA_BLOCKED') {
+        setShowInvalidJobModal(true);
+      } else {
+        notify.error(t('analysisFailed', appLanguage));
+      }
       setCvCreatorState({ isAnalyzing: false, isManual: true });
+      return;
+    }
+
+    // Immediately trigger tailoring process (Phase 5 Auto-Calculation)
+    const path = 'applications';
+    try {
+      // Use the newly fetched `analyzed` instead of state variable to avoid race conditions
+      const tailored = await tailorCv(profile.geminiApiKey, profile, analyzed, targetLanguage);
+
+      // Enrich tailored data with profile data to allow full editing
+      const enrichedTailored = {
+        ...tailored,
+        personalInfo: { ...profile.personalInfo },
+        education: [...profile.education],
+        projects: [...(profile.projects || [])],
+        languages: [...(profile.languages || [])]
+      };
+
+      // Save to Tracker
+      const docRef = await addDoc(collection(db, 'applications'), {
+        uid: profile.uid,
+        jobUrl,
+        company: analyzed?.basic_info?.company_name || 'Unknown Company',
+        position: analyzed?.basic_info?.job_title || 'Unknown Position',
+        status: 'prepared',
+        tailoredCv: enrichedTailored,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      // Linear Jump directly to Step 3
+      setCvCreatorState({
+        isAnalyzing: false,
+        isTailoring: false,
+        step: 3,
+        tailoredData: enrichedTailored,
+        activeTab: 'analysis',
+        applicationId: docRef.id
+      });
+      notify.success(t('tailoringSuccess', appLanguage));
+    } catch (error) {
+      console.error('Tailoring error:', error);
+      handleFirestoreError(error, OperationType.CREATE, path);
+      notify.error(t('tailoringFailed', appLanguage));
+      setCvCreatorState({ isAnalyzing: false, isTailoring: false });
     }
   };
 
+  // We are keeping handleTailor strictly for manual tailoring override if needed in the future,
+  // but the main flow automatically tailors in handleAnalyze.
   const handleTailor = async () => {
     if (!profile?.geminiApiKey || !jobInfo) return;
     
@@ -378,12 +433,12 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
               <div key={s.num} className="flex flex-col items-center space-y-2">
                 <div 
                   className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
-                    step >= s.num ? 'bg-[var(--color-accent)] text-white shadow-lg shadow-[var(--color-accent)]/20' : 'bg-black/5 text-black/20 border border-black/10'
+                    step === 3 || step >= s.num ? 'bg-[var(--color-accent)] text-white shadow-lg shadow-[var(--color-accent)]/20' : 'bg-black/5 text-black/20 border border-black/10'
                   }`}
                 >
-                  {step > s.num ? <CheckCircle2 size={20} /> : s.num}
+                  {step === 3 && s.num < 3 ? <CheckCircle2 size={20} /> : step > s.num ? <CheckCircle2 size={20} /> : s.num}
                 </div>
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${step >= s.num ? 'text-[var(--color-accent)]' : 'text-black/20'}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${step === 3 || step >= s.num ? 'text-[var(--color-accent)]' : 'text-black/20'}`}>
                   {s.label}
                 </span>
               </div>
@@ -478,142 +533,6 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                   </button>
                 </div>
               )}
-            </div>
-          </motion.div>
-        )}
-
-        {step === 2 && (
-          <motion.div
-            key="step2"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-8"
-          >
-            <div className="glass rounded-3xl p-8 space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold">{jobInfo?.basic_info?.job_title}</h3>
-                  <p className="text-[var(--color-accent)]">{jobInfo?.basic_info?.company_name}</p>
-                </div>
-                <div className="bg-green-500/10 text-green-600 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
-                  {t('analysisComplete', appLanguage)}
-                </div>
-              </div>
-
-              {/* Confidence score removed */}
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <h4 className="text-xs uppercase text-black/40 font-bold tracking-widest">{t('hardSkillsRequired', appLanguage)}</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {jobInfo?.skills?.must_have?.map((s: string) => (
-                      <span key={s} className="bg-black/5 px-3 py-1 rounded-lg text-sm">{s}</span>
-                    ))}
-                  </div>
-                  {jobInfo?.skills?.nice_to_have && jobInfo.skills.nice_to_have.length > 0 && (
-                    <div className="pt-2">
-                      <h4 className="text-xs uppercase text-black/40 font-bold tracking-widest mb-2">Mile widziane</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {jobInfo.skills.nice_to_have.map((s: string) => (
-                          <span key={s} className="bg-green-500/10 text-green-700 px-3 py-1 rounded-lg text-sm">{s}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-4">
-                  <h4 className="text-xs uppercase text-black/40 font-bold tracking-widest">{t('targetLanguage', appLanguage)}</h4>
-                  <div className="flex flex-wrap gap-3">
-                    {languages.map((lang) => {
-                      const isRecommended = jobInfo?.meta?.language?.toLowerCase() === lang.code || (jobInfo?.meta?.language?.toLowerCase() === 'english' && lang.code === 'en') || (jobInfo?.meta?.language?.toLowerCase() === 'polish' && lang.code === 'pl');
-                      return (
-                        <button
-                          key={lang.code}
-                          onClick={() => setCvCreatorState({ targetLanguage: lang.code })}
-                          className={`relative px-5 py-3 rounded-2xl text-sm font-bold transition-all border-2 ${
-                            targetLanguage === lang.code 
-                              ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white shadow-lg shadow-[var(--color-accent)]/20' 
-                              : isRecommended
-                                ? 'bg-green-500/5 border-green-500/30 text-green-700 hover:bg-green-500/10'
-                                : 'bg-white border-black/5 text-black/60 hover:border-black/10 hover:bg-black/5'
-                          }`}
-                        >
-                          {lang.label}
-                          {isRecommended && (
-                            <span className={`absolute -top-2.5 -right-2 px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-bold ${
-                              targetLanguage === lang.code ? 'bg-white text-[var(--color-accent)]' : 'bg-green-500 text-white'
-                            }`}>
-                              {t('recommendedByAi', appLanguage)}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {jobInfo?.context && jobInfo.context.main_responsibilities && jobInfo.context.main_responsibilities.length > 0 && (
-                <div className="space-y-4 bg-blue-500/5 p-6 rounded-2xl border border-blue-500/10">
-                  <h4 className="text-xs uppercase text-blue-800 font-bold tracking-widest">Kontekst Roli</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-xs font-bold text-blue-900">Codzienne zadania: </span>
-                      <ul className="list-disc list-inside text-sm text-blue-800/80 mt-1">
-                        {jobInfo.context.main_responsibilities.map((task: string, i: number) => (
-                          <li key={i}>{task}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {jobInfo?.company && (
-                <div className="space-y-4 bg-purple-500/5 p-6 rounded-2xl border border-purple-500/10">
-                  <h4 className="text-xs uppercase text-purple-800 font-bold tracking-widest">O Firmie</h4>
-                  <div className="space-y-3">
-                    {jobInfo.company.industry && (
-                      <div>
-                        <span className="text-xs font-bold text-purple-900">Branża: </span>
-                        <span className="text-sm text-purple-800/80">{jobInfo.company.industry}</span>
-                      </div>
-                    )}
-                    {jobInfo.company.description && (
-                      <div>
-                        <span className="text-xs font-bold text-purple-900">Opis: </span>
-                        <span className="text-sm text-purple-800/80">{jobInfo.company.description}</span>
-                      </div>
-                    )}
-                    {jobInfo.company.culture && (
-                      <div>
-                        <span className="text-xs font-bold text-purple-900">Kultura: </span>
-                        <span className="text-sm text-purple-800/80">{jobInfo.company.culture}</span>
-                      </div>
-                    )}
-                    {jobInfo.company.benefits && jobInfo.company.benefits.length > 0 && (
-                      <div>
-                        <span className="text-xs font-bold text-purple-900">Benefity: </span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {jobInfo.company.benefits.map((b: string, i: number) => (
-                            <span key={i} className="text-xs text-purple-700/70 bg-purple-500/10 px-2 py-1 rounded-md">{b}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={handleTailor}
-                disabled={isTailoring}
-                className="w-full py-5 bg-[var(--color-accent)] text-white font-bold rounded-2xl hover:scale-[1.02] transition-all flex items-center justify-center space-x-3"
-              >
-                {isTailoring ? <Loader2 className="animate-spin" /> : <Sparkles size={24} />}
-                <span className="text-lg">{t('tailorCvNow', appLanguage)}</span>
-              </button>
             </div>
           </motion.div>
         )}
@@ -1227,7 +1146,7 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
               <div className="text-center space-y-2">
                 <h3 className="text-2xl font-bold">System napotkał blokadę strony</h3>
                 <p className="text-black/60">
-                  (np. zabezpieczenie anty-botowe lub stronę logowania). Proszę, wklej treść ogłoszenia ręcznie.
+                  Portal blokuje automatyczne pobieranie (zabezpieczenia anty-botowe). Proszę, skopiuj treść ogłoszenia i wklej ją poniżej.
                 </p>
               </div>
               <div className="flex flex-col space-y-3">
@@ -1239,6 +1158,53 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                   className="w-full py-3 bg-[var(--color-accent)] text-white font-bold rounded-xl hover:scale-[1.02] transition-all"
                 >
                   Wklej tekst ręcznie
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showNotAJobModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col p-8 space-y-6"
+            >
+              <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto text-yellow-600">
+                <AlertTriangle size={32} />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-bold">To nie wygląda na ogłoszenie</h3>
+                <p className="text-black/60">
+                  Pod tym linkiem nie znaleźliśmy ogłoszenia o pracę. Sprawdź link lub wklej treść ręcznie.
+                </p>
+              </div>
+              <div className="flex flex-col space-y-3">
+                <button
+                  onClick={() => {
+                    setShowNotAJobModal(false);
+                    setCvCreatorState({ step: 1, isManual: true });
+                  }}
+                  className="w-full py-3 bg-[var(--color-accent)] text-white font-bold rounded-xl hover:scale-[1.02] transition-all"
+                >
+                  Wklej tekst ręcznie
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNotAJobModal(false);
+                    setCvCreatorState({ step: 1, isManual: false, jobUrl: '' });
+                  }}
+                  className="w-full py-3 text-black/40 font-bold hover:text-black transition-colors"
+                >
+                  Spróbuj inny link
                 </button>
               </div>
             </motion.div>
