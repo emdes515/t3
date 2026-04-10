@@ -130,6 +130,8 @@ export const Tracker: React.FC = () => {
                       document={<ModernTemplate data={app.tailoredCv} profile={profile} jobInfo={{ basic_info: { company_name: app.company, job_title: app.position } }} appLanguage={appLanguage} />}
                       fileName={`CV_${app.company}_${profile?.personalInfo?.fullName}.pdf`}
                       className="p-2 hover:bg-black/5 rounded-lg text-black/40 hover:text-black transition-all"
+                      title={t('downloadPDF', appLanguage)}
+                      aria-label={t('downloadPDF', appLanguage)}
                     >
                       {({ loading }) => loading ? <Clock size={18} className="animate-spin" /> : <Download size={18} />}
                     </PDFDownloadLink>
@@ -138,12 +140,16 @@ export const Tracker: React.FC = () => {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="p-2 hover:bg-black/5 rounded-lg text-black/40 hover:text-black transition-all"
+                      title={t('jobUrl', appLanguage)}
+                      aria-label={t('jobUrl', appLanguage)}
                     >
                       <ExternalLink size={18} />
                     </a>
                     <button 
                       onClick={() => deleteApp(app.id)}
                       className="p-2 hover:bg-red-500/20 text-black/20 hover:text-red-400 rounded-lg transition-all"
+                      title={t('deleteApplication', appLanguage)}
+                      aria-label={t('deleteApplication', appLanguage)}
                     >
                       <Trash2 size={18} />
                     </button>
@@ -184,6 +190,8 @@ export const Tracker: React.FC = () => {
                 <button 
                   onClick={() => setEditingApp(null)}
                   className="p-2 hover:bg-black/5 rounded-full transition-all"
+                  title={t('close', appLanguage)}
+                  aria-label={t('close', appLanguage)}
                 >
                   <X size={24} />
                 </button>
