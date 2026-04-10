@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Master profile containing all candidate information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "personalInfo": {
+          "type": "object",
+          "properties": {
+            "fullName": { "type": "string" },
+            "email": { "type": "string", "format": "email" },
+            "phone": { "type": "string" },
+            "location": { "type": "string" },
+            "bio": { "type": "string" },
+            "linkedin": { "type": "string" },
+            "github": { "type": "string" },
+            "portfolio": { "type": "string" }
+          }
+        },
+        "experience": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "company": { "type": "string" },
+              "position": { "type": "string" },
+              "startDate": { "type": "string" },
+              "endDate": { "type": "string" },
+              "description": { "type": "string" },
+              "isCurrent": { "type": "boolean" }
+            }
+          }
+        },
+        "education": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "school": { "type": "string" },
+              "degree": { "type": "string" },
+              "field": { "type": "string" },
+              "startDate": { "type": "string" },
+              "endDate": { "type": "string" }
+            }
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "category": { "type": "string", "enum": ["hard", "soft", "tool"] },
+              "level": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced", "Expert"] }
+            }
+          }
+        },
+        "certifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "issuer": { "type": "string" },
+              "date": { "type": "string" },
+              "link": { "type": "string" }
+            }
+          }
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "level": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2", "Native"] }
+            }
+          }
+        },
+        "courses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "provider": { "type": "string" },
+              "skills": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "link": { "type": "string" }
+            }
+          }
+        },
+        "geminiApiKey": { "type": "string", "description": "User's BYOK Gemini API Key" }
+      },
+      "required": ["uid"]
+    },
+    "Application": {
+      "title": "Job Application",
+      "description": "A specific job application with tailored CV and cover letter.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "jobUrl": { "type": "string" },
+        "company": { "type": "string" },
+        "position": { "type": "string" },
+        "status": { "type": "string", "enum": ["prepared", "applied", "interview", "rejected", "offer"] },
+        "tailoredCv": { "type": "object" },
+        "coverLetter": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "company", "position", "status"]
+    },
+    "TestConnection": {
+      "title": "Test Connection",
+      "description": "A document used to test the connection to Firestore.",
+      "type": "object",
+      "properties": {}
+    }
+  },
+  "firestore": {
+    "/test/connection": {
+      "schema": "TestConnection",
+      "description": "Test connection document."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User's master profile and settings."
+    },
+    "/applications/{applicationId}": {
+      "schema": "Application",
+      "description": "User's job applications tracker."
+    }
+  }
+}
