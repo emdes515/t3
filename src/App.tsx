@@ -6,6 +6,7 @@ import { useStore, createInitialProfile } from './store/useStore';
 import { LandingPage } from './components/LandingPage';
 import { MasterProfile } from './components/MasterProfile';
 import { CvCreator } from './components/CvCreator';
+import { JobRadar } from './components/JobRadar';
 import { Tracker } from './components/Tracker';
 import { Settings } from './components/Settings';
 import { Layout } from './components/Layout';
@@ -110,10 +111,10 @@ function AppContent() {
 
   return (
     <Layout currentView={view} setView={setView} onLogout={handleLogout} user={user}>
-      <Toaster 
-        position="bottom-right" 
-        theme="dark" 
-        richColors 
+      <Toaster
+        position="bottom-right"
+        theme="dark"
+        richColors
         closeButton
         toastOptions={{
           style: {

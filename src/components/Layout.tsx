@@ -18,6 +18,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, 
 
   const navItems = [
     { id: 'profile', label: t('masterProfile', appLanguage), icon: User },
+    { id: 'radar', label: 'Radar Ofert', icon: Radar },
     { id: 'creator', label: t('cvCreator', appLanguage), icon: FileText },
     { id: 'radar', label: appLanguage === 'pl' ? 'Radar Ofert' : 'Job Radar', icon: Radar },
     { id: 'tracker', label: t('tracker', appLanguage), icon: LayoutDashboard },
@@ -39,11 +40,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, 
             <button
               key={item.id}
               onClick={() => setView(item.id)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                currentView === item.id
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${currentView === item.id
                   ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20'
                   : 'text-black/50 hover:text-black hover:bg-violet-50'
-              }`}
+                }`}
             >
               <item.icon size={20} />
               <span className="font-medium flex-1 text-left">{item.label}</span>

@@ -108,7 +108,7 @@ export class JinaBlockedError extends Error {
 
 export const fetchJobFromURL = async (apiKey: string, url: string) => {
   const ai = new GoogleGenAI({ apiKey });
-  
+
   // Pillar 1: Smart Scraping Pipeline (Server-side Jina Reader API)
   let jobText = "";
   try {
@@ -148,7 +148,7 @@ export const fetchJobFromURL = async (apiKey: string, url: string) => {
   });
 
   let responseText = response.text;
-  
+
   if (!responseText) {
     return { meta: { is_real_job_offer: false } };
   }
@@ -173,8 +173,13 @@ export const fetchJobFromURL = async (apiKey: string, url: string) => {
 export const analyzeJobDescription = async (apiKey: string, text: string) => {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
+<<<<<<< HEAD
     model: "gemini-3-flash-preview",
     contents: `Przeanalizuj treść ogłoszenia o pracę:\n\n${text}`,
+=======
+    model: "gemini-2.5-pro",
+    contents: `Analyze this job description and extract key information in JSON format: ${text}`,
+>>>>>>> 53a5d897a9689cd52b9d422b982a29574a5c7291
     config: {
       temperature: 0.0,
       systemInstruction,
@@ -184,7 +189,7 @@ export const analyzeJobDescription = async (apiKey: string, text: string) => {
   });
 
   let responseText = response.text;
-  
+
   if (!responseText) {
     return { meta: { is_real_job_offer: false } };
   }
@@ -223,7 +228,7 @@ export const enhanceText = async (apiKey: string, text: string, context: string 
     Return the result strictly in JSON format.
   `;
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -256,7 +261,7 @@ export const auditProfile = async (apiKey: string, profile: any) => {
     Return the result in JSON format.
   `;
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -298,7 +303,7 @@ export const suggestSkills = async (apiKey: string, profile: any) => {
     Return the result in JSON format.
   `;
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -365,7 +370,11 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
   `;
 
   const response = await ai.models.generateContent({
+<<<<<<< HEAD
     model: "gemini-3-flash-preview",
+=======
+    model: "gemini-2.5-pro",
+>>>>>>> 53a5d897a9689cd52b9d422b982a29574a5c7291
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -507,9 +516,9 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
                   required: ["skill", "reason", "priority"]
                 }
               },
-              recommendations: { 
-                type: Type.ARRAY, 
-                items: { 
+              recommendations: {
+                type: Type.ARRAY,
+                items: {
                   type: Type.OBJECT,
                   properties: {
                     text: { type: Type.STRING },
@@ -517,7 +526,7 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
                     category: { type: Type.STRING, enum: ["skills", "experience", "education", "other"] }
                   },
                   required: ["text", "priority", "category"]
-                } 
+                }
               },
               strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3-5 full, confidence-building sentences explaining why the candidate is a great fit." },
               weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -545,7 +554,7 @@ export const translateTailoredData = async (apiKey: string, data: any, targetLan
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -632,16 +641,16 @@ export const translateTailoredData = async (apiKey: string, data: any, targetLan
                   required: ["skill", "reason", "priority"]
                 }
               },
-              recommendations: { 
-                type: Type.ARRAY, 
-                items: { 
+              recommendations: {
+                type: Type.ARRAY,
+                items: {
                   type: Type.OBJECT,
                   properties: {
                     text: { type: Type.STRING },
                     priority: { type: Type.STRING, enum: ["high", "medium", "low"] }
                   },
                   required: ["text", "priority"]
-                } 
+                }
               },
               strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3-5 full, confidence-building sentences explaining why the candidate is a great fit." },
               weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -675,18 +684,18 @@ export const fixGapInCv = async (apiKey: string, tailoredData: any, skill: strin
     
     CURRENT CV DATA:
     ${JSON.stringify({
-      tailoredSummary: tailoredData.tailoredSummary,
-      tailoredExperience: tailoredData.tailoredExperience,
-      tailoredSkills: tailoredData.tailoredSkills,
-      education: tailoredData.education,
-      projects: tailoredData.projects
-    })}
+    tailoredSummary: tailoredData.tailoredSummary,
+    tailoredExperience: tailoredData.tailoredExperience,
+    tailoredSkills: tailoredData.tailoredSkills,
+    education: tailoredData.education,
+    projects: tailoredData.projects
+  })}
     
     Return the updated CV sections in JSON format. If a section was not modified, return it exactly as it was.
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -725,6 +734,126 @@ export const fixGapInCv = async (apiKey: string, tailoredData: any, skill: strin
             }
           }
         }
+      }
+    }
+  });
+  return JSON.parse(response.text);
+};
+
+
+export const generateJobSearchQueries = async (apiKey: string, profile: any) => {
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `
+    You are an expert technical recruiter and OSINT specialist.
+    Based on the following candidate profile, generate a list of 5 Google Dorks (advanced search queries) to find recent and highly relevant job postings.
+    Target platforms like: pracuj.pl, linkedin.com/jobs, justjoin.it, indeed.com.
+
+    CANDIDATE PROFILE:
+    ${JSON.stringify({
+    experience: profile.experience,
+    skills: profile.skills,
+    personalInfo: {
+      jobTitle: profile.personalInfo.jobTitle,
+      location: profile.personalInfo.location
+    }
+  })}
+
+    INSTRUCTIONS:
+    - Queries should use operators like site:, intitle:, OR.
+    - Focus on the main technologies/skills and location (or Remote/Zdalna).
+    - Limit to 5 variations.
+
+    Return the result strictly in JSON format.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          queries: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
+          }
+        },
+        required: ["queries"]
+      }
+    }
+  });
+  return JSON.parse(response.text);
+};
+
+export const searchJobsWithGemini = async (apiKey: string, queries: string[]) => {
+  const ai = new GoogleGenAI({ apiKey });
+  const combinedQuery = queries.slice(0, 2).join(' OR '); // Use top 2 to not overload
+  const prompt = `
+    Perform a Google search to find job postings published in the last 24-48 hours using this advanced query:
+    ${combinedQuery}
+
+    Return a list of URLs to the job postings you found. DO NOT make up URLs.
+    If you find real job board links, return them.
+    Return the result strictly in JSON format.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-pro",
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          urls: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
+          }
+        },
+        required: ["urls"]
+      }
+    }
+  });
+  return JSON.parse(response.text);
+};
+
+export const generateRadarSummary = async (apiKey: string, profile: any, jobInfo: any) => {
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `
+    Analyze why this specific job is a great fit for the candidate.
+    Write a 2-3 sentence summary in the style of a personalized recruiter message.
+    Start with something like "Dlaczego ta oferta?".
+    Be specific about which of the candidate's skills or experiences match the job's requirements.
+
+    JOB INFO:
+    ${JSON.stringify(jobInfo)}
+
+    CANDIDATE PROFILE:
+    ${JSON.stringify({
+    experience: profile.experience,
+    skills: profile.skills
+  })}
+
+    INSTRUCTIONS:
+    - Detect the language of the candidate's profile and respond in the SAME LANGUAGE.
+    - Keep it short, punchy, and highly relevant.
+
+    Return the result strictly in JSON format.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          summary: { type: Type.STRING, description: "The 2-3 sentence explanation." }
+        },
+        required: ["summary"]
       }
     }
   });
