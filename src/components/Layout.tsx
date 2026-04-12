@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, FileText, LayoutDashboard, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { User, FileText, LayoutDashboard, Settings as SettingsIcon, LogOut, Radar } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { t } from '../i18n';
@@ -13,11 +13,13 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, onLogout, user }) => {
-  const { appLanguage } = useStore();
+  const { appLanguage, radarState } = useStore();
+  const newRadarJobs = radarState.jobs.filter(j => j.status === 'new').length;
 
   const navItems = [
     { id: 'profile', label: t('masterProfile', appLanguage), icon: User },
     { id: 'creator', label: t('cvCreator', appLanguage), icon: FileText },
+    { id: 'radar', label: appLanguage === 'pl' ? 'Radar Ofert' : 'Job Radar', icon: Radar },
     { id: 'tracker', label: t('tracker', appLanguage), icon: LayoutDashboard },
     { id: 'settings', label: t('settings', appLanguage), icon: SettingsIcon },
   ];
@@ -27,24 +29,29 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, 
       {/* Sidebar */}
       <aside className="w-64 border-r border-black/5 bg-white flex flex-col sticky top-0 h-screen">
         <div className="p-8">
-          <h1 className="text-2xl font-display font-bold text-accent tracking-tighter uppercase">
+          <h1 className="text-2xl font-display font-bold bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent tracking-tighter uppercase">
             TailorCV
           </h1>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2">
+        <nav className="flex-1 px-4 space-y-1">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setView(item.id)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                 currentView === item.id
-                  ? 'bg-accent text-white shadow-md'
-                  : 'text-black/60 hover:text-black hover:bg-black/5'
+                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20'
+                  : 'text-black/50 hover:text-black hover:bg-violet-50'
               }`}
             >
               <item.icon size={20} />
-              <span className="font-medium">{item.label}</span>
+              <span className="font-medium flex-1 text-left">{item.label}</span>
+              {item.id === 'radar' && newRadarJobs > 0 && (
+                <span className="bg-white/90 text-violet-600 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  {newRadarJobs}
+                </span>
+              )}
             </button>
           ))}
         </nav>

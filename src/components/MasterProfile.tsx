@@ -16,6 +16,7 @@ import debounce from 'lodash.debounce';
 import { notify } from '../lib/notifications';
 import { GoogleGenAI } from "@google/genai";
 import { auditProfile, enhanceText, suggestSkills } from '../lib/gemini';
+import { LaborIllusion, ApiErrorOverlay } from './LaborIllusion';
 import { LANGUAGES, SOCIAL_PLATFORMS } from '../constants';
 import { t } from '../i18n';
 
@@ -227,17 +228,8 @@ export const MasterProfile: React.FC = () => {
   const [localProfile, setLocalProfile] = useState(profile);
   const [isSaving, setIsSaving] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [showAiErrorOverlay, setShowAiErrorOverlay] = useState<{ isOpen: boolean; type: 'quota' | 'timeout' | 'generic'; message: string }>({ isOpen: false, type: 'generic', message: '' });
   const [suggestedSkills, setSuggestedSkills] = useState<any[]>([]);
-  const [wasAuditing, setWasAuditing] = useState(isAuditingProfile);
-
-  useEffect(() => {
-    if (isAuditingProfile) {
-      setWasAuditing(true);
-    } else if (wasAuditing && !isAuditingProfile && profile?.auditData) {
-      setIsAuditModalOpen(true);
-      setWasAuditing(false);
-    }
-  }, [isAuditingProfile, wasAuditing, profile?.auditData]);
   const [isSuggestingSkills, setIsSuggestingSkills] = useState(false);
   const [profileStrength, setProfileStrength] = useState(0);
   const [isEnhancing, setIsEnhancing] = useState<string | null>(null);
@@ -337,13 +329,44 @@ export const MasterProfile: React.FC = () => {
   }, [localProfile, profile, debouncedSave]);
 
   // Profile Auditor Logic
+  const auditMessages = [
+    "Skanowanie struktury profilu",
+    "Analiza luk kompetencyjnych",
+    "Sprawdzanie poprawności dat i spójności",
+    "Ocena metodyki STAR w opisach",
+    "Generowanie rekomendacji"
+  ];
+
   const runAudit = useCallback(async () => {
     if (!profile?.geminiApiKey || !localProfile) return;
     try {
-      await performProfileAudit(profile.geminiApiKey, localProfile);
+      const result = await performProfileAudit(profile.geminiApiKey, localProfile);
+      
+      // Update local state directly which triggers debouncedSave!
+      handleLocalUpdate({ auditData: result });
+      setIsAuditModalOpen(true);
+      
       notify.success(t('auditCompleted', appLanguage));
-    } catch (error) {
-      notify.error(t('failedAudit', appLanguage));
+    } catch (error: any) {
+      console.error('Audit error:', error);
+      const errorStr = JSON.stringify(error);
+      if (errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED')) {
+        setShowAiErrorOverlay({
+          isOpen: true,
+          type: 'quota',
+          message: appLanguage === 'pl'
+            ? 'AI potrzebuje chwili przerwy. Limit zapytań został wyczerpany — spróbuj ponownie za minutę.'
+            : 'AI needs a short break. Rate limit has been reached — try again in a minute.'
+        });
+      } else {
+        setShowAiErrorOverlay({
+          isOpen: true,
+          type: 'generic',
+          message: appLanguage === 'pl'
+            ? 'Nie udało się połączyć z AI. Sprawdź klucz API w ustawieniach i spróbuj ponownie.'
+            : 'Failed to connect to AI. Check your API key in settings and try again.'
+        });
+      }
     }
   }, [profile?.geminiApiKey, localProfile, performProfileAudit, appLanguage]);
 
@@ -420,6 +443,13 @@ export const MasterProfile: React.FC = () => {
     }, 100);
   };
 
+  const skillSuggestionMessages = [
+    "Analiza doświadczenia pod kątem ukrytych kompetencji",
+    "Identyfikacja technologii z opisów projektów",
+    "Wyodrębnianie umiejętności miękkich z codziennych zadań",
+    "Dopasowywanie wyników do standardów rynkowych"
+  ];
+
   const fetchSkillSuggestions = async () => {
     if (!profile?.geminiApiKey || !localProfile) return;
     setIsSuggestingSkills(true);
@@ -473,9 +503,20 @@ export const MasterProfile: React.FC = () => {
           setEnhanceModalData(null);
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      notify.error(t('enhancementFailed', appLanguage));
+      const errorStr = JSON.stringify(error);
+      if (errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED')) {
+        setShowAiErrorOverlay({
+          isOpen: true,
+          type: 'quota',
+          message: appLanguage === 'pl'
+            ? 'AI potrzebuje chwili przerwy. Spróbuj ulepszyć tekst za minutę.'
+            : 'AI needs a short break. Try enhancing text in a minute.'
+        });
+      } else {
+        notify.error(t('enhancementFailed', appLanguage));
+      }
     } finally {
       setIsEnhancing(null);
     }
@@ -549,24 +590,15 @@ export const MasterProfile: React.FC = () => {
 
   return (
     <div className="flex gap-12 relative max-w-7xl mx-auto">
-      <AnimatePresence>
-        {isAuditingProfile && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center"
-          >
-            <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center text-center max-w-md w-full">
-              <Loader2 size={48} className="animate-spin text-primary mb-6" />
-              <h3 className="text-2xl font-bold mb-2">AI skanuje Twój profil...</h3>
-              <p className="text-black/60">
-                Szukam luk kompetencyjnych, sprawdzam poprawność dat i oceniam metodykę STAR. To może potrwać kilkanaście sekund.
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <LaborIllusion messages={auditMessages} isActive={isAuditingProfile} />
+
+      <ApiErrorOverlay
+        isOpen={showAiErrorOverlay.isOpen}
+        type={showAiErrorOverlay.type}
+        message={showAiErrorOverlay.message}
+        onClose={() => setShowAiErrorOverlay({ ...showAiErrorOverlay, isOpen: false })}
+        appLanguage={appLanguage}
+      />
 
       {/* Sidebar Navigation */}
       <aside className="w-64 sticky top-8 h-fit space-y-2">
@@ -582,8 +614,8 @@ export const MasterProfile: React.FC = () => {
             onClick={() => setActiveSection(s.id)}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${
               activeSection === s.id 
-                ? 'bg-accent text-white font-bold shadow-lg shadow-accent/20' 
-                : 'text-black/40 hover:text-black hover:bg-black/5'
+                ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold shadow-lg shadow-violet-500/20' 
+                : 'text-black/40 hover:text-black hover:bg-violet-50'
             }`}
           >
             <s.icon size={18} />
@@ -1177,7 +1209,10 @@ export const MasterProfile: React.FC = () => {
                                   {formatDateRange(edu.startDate, edu.endDate, false)}
                                 </span>
                               </div>
-                              <p className="text-primary font-medium">{edu.degree || t('degree', appLanguage)} {t('in', appLanguage)} {edu.field || t('field', appLanguage)}</p>
+                              <p className="text-primary font-medium">
+                                {edu.degree && <span>{edu.degree}</span>}
+                                {edu.field && <span> — {edu.field}</span>}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center space-x-3">
@@ -1203,7 +1238,9 @@ export const MasterProfile: React.FC = () => {
                             >
                               <div className="grid grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                  <label className="text-[10px] uppercase text-black/40 font-bold tracking-widest">{t('school', appLanguage)}</label>
+                                  <label className="text-[10px] uppercase text-black/40 font-bold tracking-widest">
+                                    {appLanguage === 'pl' ? 'Nazwa szkoły / uczelni' : t('school', appLanguage)}
+                                  </label>
                                   <input
                                     value={edu.school}
                                     onChange={(e) => {
@@ -1211,23 +1248,54 @@ export const MasterProfile: React.FC = () => {
                                       newEdu[idx].school = e.target.value;
                                       handleLocalUpdate({ education: newEdu });
                                     }}
+                                    placeholder={appLanguage === 'pl' ? 'np. Politechnika Warszawska' : 'e.g. Stanford University'}
                                     className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:border-primary outline-none"
                                   />
                                 </div>
                                 <div className="space-y-2">
-                                  <label className="text-[10px] uppercase text-black/40 font-bold tracking-widest">{t('degree', appLanguage)}</label>
-                                  <input
+                                  <label className="text-[10px] uppercase text-black/40 font-bold tracking-widest">
+                                    {appLanguage === 'pl' ? 'Poziom wykształcenia' : t('degree', appLanguage)}
+                                  </label>
+                                  <select
                                     value={edu.degree}
                                     onChange={(e) => {
                                       const newEdu = [...localProfile.education];
                                       newEdu[idx].degree = e.target.value;
                                       handleLocalUpdate({ education: newEdu });
                                     }}
-                                    className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:border-primary outline-none"
-                                  />
+                                    className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:border-primary outline-none appearance-none"
+                                  >
+                                    <option value="">{appLanguage === 'pl' ? '-- Wybierz poziom --' : '-- Select level --'}</option>
+                                    {appLanguage === 'pl' ? (
+                                      <>
+                                        <option value="Szkoła Branżowa / Zawodowa">Szkoła Branżowa / Zawodowa</option>
+                                        <option value="Liceum Ogólnokształcące">Liceum Ogólnokształcące</option>
+                                        <option value="Technikum">Technikum</option>
+                                        <option value="Szkoła Policealna">Szkoła Policealna</option>
+                                        <option value="Licencjat">Licencjat</option>
+                                        <option value="Inżynier">Inżynier</option>
+                                        <option value="Magister">Magister</option>
+                                        <option value="Magister Inżynier">Magister Inżynier</option>
+                                        <option value="Studia Podyplomowe">Studia Podyplomowe</option>
+                                        <option value="Doktorat">Doktorat</option>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <option value="High School">High School</option>
+                                        <option value="Vocational School">Vocational School</option>
+                                        <option value="Bachelor's Degree">Bachelor's Degree</option>
+                                        <option value="Master's Degree">Master's Degree</option>
+                                        <option value="Engineer's Degree">Engineer's Degree</option>
+                                        <option value="Postgraduate Studies">Postgraduate Studies</option>
+                                        <option value="PhD">PhD</option>
+                                      </>
+                                    )}
+                                  </select>
                                 </div>
                                 <div className="space-y-2">
-                                  <label className="text-[10px] uppercase text-black/40 font-bold tracking-widest">{t('field', appLanguage)}</label>
+                                  <label className="text-[10px] uppercase text-black/40 font-bold tracking-widest">
+                                    {appLanguage === 'pl' ? 'Kierunek / Profil' : t('field', appLanguage)}
+                                  </label>
                                   <input
                                     value={edu.field}
                                     onChange={(e) => {
@@ -1235,6 +1303,7 @@ export const MasterProfile: React.FC = () => {
                                       newEdu[idx].field = e.target.value;
                                       handleLocalUpdate({ education: newEdu });
                                     }}
+                                    placeholder={appLanguage === 'pl' ? 'np. Informatyka, Profil matematyczny' : 'e.g. Computer Science'}
                                     className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:border-primary outline-none"
                                   />
                                 </div>
@@ -1297,7 +1366,8 @@ export const MasterProfile: React.FC = () => {
           )}
 
             {activeSection === 'skills' && (
-              <section className="space-y-12">
+              <section className="space-y-12 relative">
+                <LaborIllusion messages={skillSuggestionMessages} isActive={isSuggestingSkills} />
                 <div className="flex items-center justify-between">
                   <h2 className="text-4xl font-display uppercase tracking-tight">{t('skills', appLanguage)}</h2>
                   <div className="flex items-center space-x-4">
@@ -1933,7 +2003,7 @@ export const MasterProfile: React.FC = () => {
         </AnimatePresence>
 
         <AnimatePresence>
-          {isAuditModalOpen && localProfile?.auditData && (
+          {isAuditModalOpen && profile?.auditData && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1957,8 +2027,8 @@ export const MasterProfile: React.FC = () => {
                       <h2 className="text-2xl font-display font-bold">{t('auditResults', appLanguage)}</h2>
                       <div className="flex items-center space-x-2 mt-1">
                         <span className="text-sm text-black/60">{t('score', appLanguage)}:</span>
-                        <span className={`font-bold ${getStrengthTextColor(localProfile.auditData.score)}`}>
-                          {localProfile.auditData.score}/100
+                        <span className={`font-bold ${getStrengthTextColor(profile.auditData.score)}`}>
+                          {profile.auditData.score}/100
                         </span>
                       </div>
                     </div>
@@ -1980,7 +2050,7 @@ export const MasterProfile: React.FC = () => {
                         <span>{t('criticalIssues', appLanguage)}</span>
                       </h3>
                       <div className="grid gap-3">
-                        {localProfile.auditData.tips.filter((t: any) => t.type === 'critical').map((tip: any, i: number) => (
+                        {profile.auditData.tips.filter((t: any) => t.type === 'critical').map((tip: any, i: number) => (
                           <div key={i} className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-start space-x-4">
                             <div className="w-8 h-8 bg-red-100 text-red-600 rounded-xl flex items-center justify-center shrink-0 mt-1">
                               <AlertCircle size={16} />
@@ -1996,14 +2066,14 @@ export const MasterProfile: React.FC = () => {
                   )}
 
                   {/* Suggestions */}
-                  {localProfile.auditData.tips.filter((t: any) => t.type !== 'critical').length > 0 && (
+                  {profile.auditData.tips.filter((t: any) => t.type !== 'critical').length > 0 && (
                     <div className="space-y-4">
                       <h3 className="text-lg font-bold flex items-center space-x-2 text-blue-600">
                         <Lightbulb size={20} />
                         <span>{t('suggestions', appLanguage)}</span>
                       </h3>
                       <div className="grid gap-3">
-                        {localProfile.auditData.tips.filter((t: any) => t.type !== 'critical').map((tip: any, i: number) => (
+                        {profile.auditData.tips.filter((t: any) => t.type !== 'critical').map((tip: any, i: number) => (
                           <div key={i} className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start space-x-4">
                             <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center shrink-0 mt-1">
                               <Lightbulb size={16} />

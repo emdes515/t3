@@ -9,6 +9,7 @@ import { CvCreator } from './components/CvCreator';
 import { Tracker } from './components/Tracker';
 import { Settings } from './components/Settings';
 import { Layout } from './components/Layout';
+import { JobRadar } from './components/JobRadar';
 import { Toaster } from 'sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { handleFirestoreError, OperationType } from './lib/firebase-errors';
@@ -24,9 +25,10 @@ export default function App() {
 function AppContent() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'landing' | 'profile' | 'creator' | 'tracker' | 'settings'>('landing');
+  const [view, setView] = useState<'landing' | 'profile' | 'creator' | 'radar' | 'tracker' | 'settings'>('landing');
   const [initialJobData, setInitialJobData] = useState<any>(null);
-  const { setProfile } = useStore();
+  const [prefilledJobInfo, setPrefilledJobInfo] = useState<any>(null);
+  const { setProfile, setCvCreatorState } = useStore();
 
   useEffect(() => {
     async function testConnection() {
@@ -122,7 +124,12 @@ function AppContent() {
         }}
       />
       {view === 'profile' && <MasterProfile />}
-      {view === 'creator' && <CvCreator initialData={initialJobData} />}
+      {view === 'creator' && <CvCreator initialData={initialJobData} prefilledJobInfo={prefilledJobInfo} />}
+      {view === 'radar' && <JobRadar onGenerateCv={(jobInfo, jobUrl) => {
+        setPrefilledJobInfo(jobInfo);
+        setCvCreatorState({ jobUrl, jobInfo, step: 2, isAnalyzing: false });
+        setView('creator');
+      }} />}
       {view === 'tracker' && <Tracker />}
       {view === 'settings' && <Settings />}
     </Layout>

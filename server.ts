@@ -37,6 +37,53 @@ async function startServer() {
     }
   }));
 
+  // ─── FAZA 2: Jina Reader API Proxy (Server-side scraping) ───
+  app.post('/api/scrape', async (req, res) => {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+      const jinaResponse = await axios.get(`https://r.jina.ai/${url}`, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'text/plain',
+        },
+        timeout: 12000,
+        validateStatus: (status) => status < 500, // Don't throw on 4xx
+      });
+
+      clearTimeout(timeoutId);
+
+      if (jinaResponse.status >= 400) {
+        return res.status(jinaResponse.status).json({
+          error: 'blocked',
+          message: 'Portal blokuje automatyczne pobieranie (zabezpieczenia anty-botowe).',
+        });
+      }
+
+      const text = jinaResponse.data;
+      if (!text || (typeof text === 'string' && text.length < 100)) {
+        return res.status(422).json({
+          error: 'empty',
+          message: 'Nie udało się wyciągnąć treści ze strony.',
+        });
+      }
+
+      return res.json({ text: typeof text === 'string' ? text : String(text) });
+    } catch (err: any) {
+      if (err.code === 'ECONNABORTED' || err.name === 'AbortError') {
+        return res.status(504).json({ error: 'timeout', message: 'Przekroczono czas połączenia z portalem.' });
+      }
+      console.error('Jina scrape error:', err.message);
+      return res.status(502).json({ error: 'failed', message: 'Nie udało się pobrać strony.' });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

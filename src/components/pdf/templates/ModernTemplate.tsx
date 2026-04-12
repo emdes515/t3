@@ -40,6 +40,31 @@ const formatDate = (dateString: string) => {
   return dateString;
 };
 
+const getLevelScore = (level: string) => {
+  const l = level?.toLowerCase() || '';
+  if (['beginner', 'a1', 'a2'].includes(l)) return 2;
+  if (['intermediate', 'b1', 'b2'].includes(l)) return 3;
+  if (['advanced', 'c1'].includes(l)) return 4;
+  if (['expert', 'c2', 'native'].includes(l)) return 5;
+  return 0; // Default
+};
+
+const SkillDots = ({ score }: { score: number }) => {
+  if (score === 0) return null;
+  return (
+    <View style={{ flexDirection: 'row', gap: 3, marginTop: 4 }}>
+      {[1, 2, 3, 4, 5].map((dot) => (
+        <Svg key={dot} viewBox="0 0 10 10" width={6} height={6}>
+          <Path
+            d="M5 10A5 5 0 1 0 5 0a5 5 0 0 0 0 10z"
+            fill={dot <= score ? '#38bdf8' : '#334155'}
+          />
+        </Svg>
+      ))}
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
   page: {
     padding: 0,
@@ -56,7 +81,7 @@ const styles = StyleSheet.create({
   },
   sidebar: {
     width: '30%',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#1e1b4b', // deep violet/indigo (indigo-950)
     color: '#f8fafc',
     padding: 30,
     paddingTop: 40,
@@ -121,11 +146,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: 700,
-    color: '#0f172a',
+    color: '#1e1b4b',
     textTransform: 'uppercase',
-    letterSpacing: 1,
-    borderBottomWidth: 2,
-    borderBottomColor: '#0f172a',
+    letterSpacing: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#cbd5e1',
     paddingBottom: 4,
     marginBottom: 12,
   },
@@ -179,17 +204,25 @@ const styles = StyleSheet.create({
   skillsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
   },
   skillBadge: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    fontSize: 8,
-    color: '#334155',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 70,
+  },
+  skillText: {
+    fontSize: 8,
+    color: '#1e1b4b',
+    fontWeight: 600,
+    textAlign: 'center',
   },
   footer: {
     position: 'absolute',
@@ -326,11 +359,15 @@ export const ModernTemplate = ({ data, profile, jobInfo, appLanguage, showPhoto 
                     const skillName = typeof s === 'string' ? s : s.name;
                     const originalSkill = profile.skills?.find((ps: any) => ps.name.toLowerCase() === skillName.toLowerCase());
                     const level = originalSkill?.level;
+                    const score = level ? getLevelScore(level) : 0;
                     return (
                       <View key={i} style={styles.skillBadge}>
-                        <Text style={{ fontSize: 8 }}>
-                          {skillName}{showSkillLevels && level ? ` - ${level}` : ''}
+                        <Text style={styles.skillText}>
+                          {skillName}
                         </Text>
+                        {showSkillLevels && score > 0 && (
+                          <SkillDots score={score} />
+                        )}
                       </View>
                     );
                   })}
@@ -412,12 +449,18 @@ export const ModernTemplate = ({ data, profile, jobInfo, appLanguage, showPhoto 
             {displayLanguages?.filter((l: any) => l.name).length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{appLanguage === 'pl' ? 'Języki' : 'Languages'}</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  {displayLanguages.filter((l: any) => l.name).map((lang: any, idx: number) => (
-                    <Text key={idx} style={styles.text}>
-                      {lang.name} ({lang.level})
-                    </Text>
-                  ))}
+                <View style={styles.skillsGrid}>
+                  {displayLanguages.filter((l: any) => l.name).map((lang: any, idx: number) => {
+                    const score = lang.level ? getLevelScore(lang.level) : 0;
+                    return (
+                      <View key={idx} style={styles.skillBadge}>
+                        <Text style={styles.skillText}>
+                          {lang.name}
+                        </Text>
+                        {showSkillLevels && score > 0 && <SkillDots score={score} />}
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             )}

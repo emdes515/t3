@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { t } from '../i18n';
-import { fetchJobFromURL, analyzeJobDescription, tailorCv, translateTailoredData } from '../lib/gemini';
+import { fetchJobFromURL, analyzeJobDescription, tailorCv, translateTailoredData, JinaBlockedError } from '../lib/gemini';
 import { db } from '../firebase';
 import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../lib/firebase-errors';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { Sparkles, Link as LinkIcon, FileText, Download, CheckCircle2, Loader2, ArrowLeft, Eye, Edit3, Save, Languages, RefreshCw, X, Plus, AlertTriangle, GripVertical, ThumbsUp, Undo } from 'lucide-react';
+import { Sparkles, Link as LinkIcon, FileText, Download, CheckCircle2, Loader2, ArrowLeft, Eye, Edit3, Save, Languages, RefreshCw, X, Plus, AlertTriangle, GripVertical, ThumbsUp, Undo, Zap, AlertCircle } from 'lucide-react';
 import { notify } from '../lib/notifications';
 import { PDFDownloadLink, Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/renderer';
 import { CanvasPDFViewer } from './CanvasPDFViewer';
 import debounce from 'lodash.debounce';
 import { generateWordDocument } from '../lib/docxExport';
+import { quickMatchScore } from '../lib/radarService';
 
 import { ModernTemplate } from './pdf/templates/ModernTemplate';
 import { ClassicTemplate } from './pdf/templates/ClassicTemplate';
@@ -19,6 +20,7 @@ import { ModernCoverLetterTemplate } from './pdf/templates/ModernCoverLetterTemp
 import { ClassicCoverLetterTemplate } from './pdf/templates/ClassicCoverLetterTemplate';
 import { registerFonts } from './pdf/fonts';
 import { MatchAnalysis } from './MatchAnalysis';
+import { LaborIllusion, ApiErrorOverlay } from './LaborIllusion';
 
 // Register Fonts for PDF
 registerFonts();
@@ -30,16 +32,17 @@ registerFonts();
 interface CvCreatorProps {
   initialData?: any;
   onClose?: () => void;
+  prefilledJobInfo?: any;
 }
 
-export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) => {
+export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose, prefilledJobInfo }) => {
   const { profile, appLanguage, cvCreatorState, setCvCreatorState } = useStore();
   
-  const step = initialData ? 3 : (cvCreatorState?.step || 1);
+  const step = initialData ? 3 : (cvCreatorState?.step || (prefilledJobInfo ? 2 : 1));
   const jobUrl = initialData?.jobUrl || (cvCreatorState?.jobUrl || '');
   const manualJobText = cvCreatorState?.manualJobText || '';
   const isManual = cvCreatorState?.isManual || false;
-  const jobInfo = initialData ? { basic_info: { company_name: initialData.company, job_title: initialData.position }, skills: { must_have: [] } } : (cvCreatorState?.jobInfo || null);
+  const jobInfo = initialData ? { basic_info: { company_name: initialData.company, job_title: initialData.position }, skills: { must_have: [] } } : (cvCreatorState?.jobInfo || prefilledJobInfo || null);
   const targetLanguage = cvCreatorState?.targetLanguage || 'auto';
   const activeTab = cvCreatorState?.activeTab || 'analysis';
   const selectedTemplate = cvCreatorState?.selectedTemplate || 'modern';
@@ -60,34 +63,33 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
   const [showSkillLevels, setShowSkillLevels] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showLowConfidenceModal, setShowLowConfidenceModal] = useState(false);
-  const [showInvalidJobModal, setShowInvalidJobModal] = useState(false);
+  const [showApiErrorModal, setShowApiErrorModal] = useState<{
+    isOpen: boolean;
+    type: 'quota' | 'timeout' | 'generic';
+    message: string;
+  }>({ isOpen: false, type: 'generic', message: '' });
   const [editorMode, setEditorMode] = useState<'form' | 'pdf'>('form');
   const [progressMessage, setProgressMessage] = useState('');
+  const [showJinaFallbackModal, setShowJinaFallbackModal] = useState(false);
+  const [showStartOverModal, setShowStartOverModal] = useState(false);
 
   const isAnalyzing = cvCreatorState?.isAnalyzing || false;
   const isTailoring = cvCreatorState?.isTailoring || false;
   const applicationId = initialData?.id || cvCreatorState?.applicationId;
 
-  // Labor Illusion Effect
-  useEffect(() => {
-    if (isAnalyzing) {
-      const messages = [
-        "Łączę ze stroną...",
-        "Czytam wymagania stanowiska...",
-        "Analizuję profil pracodawcy...",
-        "Strukturyzuję dane..."
-      ];
-      let i = 0;
-      setProgressMessage(messages[0]);
-      const interval = setInterval(() => {
-        i = (i + 1) % messages.length;
-        setProgressMessage(messages[i]);
-      }, 2000);
-      return () => clearInterval(interval);
-    } else {
-      setProgressMessage('');
-    }
-  }, [isAnalyzing]);
+  const analysisMessages = [
+    "Nawiązywanie połączenia z portalem...",
+    "Oczyszczanie strony z reklam i szumu...",
+    "AI wyodrębnia kluczowe wymagania..."
+  ];
+
+  const tailoringMessages = [
+    "Łączenie z Master profilem",
+    "Dopasowywanie doświadczenia zawodowego",
+    "Generowanie profesjonalnego podsumowania",
+    "Szycie sekcji umiejętności na miarę",
+    "Finalizowanie Match Score"
+  ];
 
   // Debounced Auto-save for CV
   const debouncedSaveCv = useCallback(
@@ -117,22 +119,25 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
     return () => debouncedSaveCv.cancel();
   }, [tailoredData, applicationId, debouncedSaveCv]);
 
+  const executeReset = () => {
+    setShowStartOverModal(false);
+    setCvCreatorState({
+      step: 1,
+      jobUrl: '',
+      manualJobText: '',
+      isManual: false,
+      jobInfo: null,
+      tailoredData: null,
+      targetLanguage: 'auto',
+      activeTab: 'analysis',
+      selectedTemplate: 'modern',
+      isAnalyzing: false,
+      isTailoring: false
+    });
+  };
+
   const handleReset = () => {
-    if (window.confirm(appLanguage === 'pl' ? 'Czy na pewno chcesz zacząć od nowa? Niezapisane zmiany zostaną utracone.' : 'Are you sure you want to start over? Unsaved changes will be lost.')) {
-      setCvCreatorState({
-        step: 1,
-        jobUrl: '',
-        manualJobText: '',
-        isManual: false,
-        jobInfo: null,
-        tailoredData: null,
-        targetLanguage: 'auto',
-        activeTab: 'analysis',
-        selectedTemplate: 'modern',
-        isAnalyzing: false,
-        isTailoring: false
-      });
-    }
+    setShowStartOverModal(true);
   };
 
   useEffect(() => {
@@ -164,42 +169,36 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
 
     setCvCreatorState({ isAnalyzing: true, jobUrl, manualJobText, isManual });
 
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT')), 45000)
+    );
+
     try {
       let analyzed;
-      if (isManual) {
-        analyzed = await analyzeJobDescription(profile.geminiApiKey, manualJobText);
-      } else {
-        // Pillar 4: Caching na poziomie bazy danych
-        // Create a simple hash from the URL
-        const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(jobUrl));
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const urlHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        const cacheRef = doc(db, 'job_cache', urlHash);
-        const cacheSnap = await getDoc(cacheRef);
-        
-        // Check if cache exists and is less than 7 days old
-        const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-        if (cacheSnap.exists() && (Date.now() - cacheSnap.data().timestamp < SEVEN_DAYS_MS)) {
-          console.log("Using cached job analysis");
-          analyzed = cacheSnap.data().data;
+      const analysisCall = async () => {
+        if (isManual) {
+          return await analyzeJobDescription(profile.geminiApiKey, manualJobText);
         } else {
-          console.log("Fetching fresh job analysis");
-          analyzed = await fetchJobFromURL(profile.geminiApiKey, jobUrl);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(jobUrl));
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const urlHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
           
-          // Save to cache if it's a real job offer
-          if (analyzed?.meta?.is_real_job_offer !== false) {
-            await setDoc(cacheRef, {
-              url: jobUrl,
-              timestamp: Date.now(),
-              data: analyzed
-            });
+          const cacheRef = doc(db, 'job_cache', urlHash);
+          const cacheSnap = await getDoc(cacheRef);
+          
+          const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+          if (cacheSnap.exists() && (Date.now() - cacheSnap.data().timestamp < SEVEN_DAYS_MS)) {
+            return cacheSnap.data().data;
+          } else {
+            return await fetchJobFromURL(profile.geminiApiKey, jobUrl);
           }
         }
-      }
+      };
+
+      analyzed = await Promise.race([analysisCall(), timeoutPromise]);
       
       if (analyzed?.meta?.is_real_job_offer === false) {
-        setShowInvalidJobModal(true);
+        setShowJinaFallbackModal(true);
         setCvCreatorState({ isAnalyzing: false, isManual: true });
         return;
       }
@@ -208,24 +207,61 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
       if (loc.includes('us') || loc.includes('united states') || loc.includes('uk') || loc.includes('united kingdom')) {
         setShowPhoto(false);
       }
+
+      // FAZA 5: Calculate WOW Match Score on the fly
+      const matchResult = await quickMatchScore(profile.geminiApiKey, profile, analyzed);
       
-      setCvCreatorState({ isAnalyzing: false, step: 2, jobInfo: analyzed });
-    } catch (error) {
+      setCvCreatorState({ isAnalyzing: false, step: 2, jobInfo: analyzed, matchAnalysis: matchResult });
+    } catch (error: any) {
       console.error('Analysis error:', error);
+      setCvCreatorState({ isAnalyzing: false });
+      
+      if (error.message === 'TIMEOUT') {
+        setShowApiErrorModal({
+          isOpen: true,
+          type: 'timeout',
+          message: appLanguage === 'pl' 
+            ? 'AI chyba ucięło sobie drzemkę... Próba trwała za długo. Spróbuj jeszcze raz!' 
+            : 'AI seems to be taking a nap... The request timed out. Please try again!'
+        });
+        return;
+      }
+
+      const errorStr = JSON.stringify(error);
+      if (errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED')) {
+        setShowApiErrorModal({
+          isOpen: true,
+          type: 'quota',
+          message: appLanguage === 'pl'
+            ? 'Przekroczyłeś limit darmowych zapytań Gemini. AI musi chwilę odpocząć (zwykle minutę).'
+            : 'You exceeded the Gemini free quota. The AI needs a short break (usually a minute).'
+        });
+        return;
+      }
+      
+      if (error instanceof JinaBlockedError) {
+        setShowJinaFallbackModal(true);
+        return;
+      }
+      
       notify.error(t('analysisFailed', appLanguage));
-      setCvCreatorState({ isAnalyzing: false, isManual: true });
+      setCvCreatorState({ isManual: true });
     }
   };
 
   const handleTailor = async () => {
     if (!profile?.geminiApiKey || !jobInfo) return;
     
-    setCvCreatorState({ isTailoring: true });
-    const path = 'applications';
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT')), 45000)
+    );
+
     try {
-      const tailored = await tailorCv(profile.geminiApiKey, profile, jobInfo, targetLanguage);
+      const tailored = await Promise.race([
+        tailorCv(profile.geminiApiKey, profile, jobInfo, targetLanguage),
+        timeoutPromise
+      ]) as any;
       
-      // Enrich tailored data with profile data to allow full editing
       const enrichedTailored = {
         ...tailored,
         personalInfo: { ...profile.personalInfo },
@@ -234,7 +270,6 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
         languages: [...(profile.languages || [])]
       };
       
-      // Save to Tracker
       const docRef = await addDoc(collection(db, 'applications'), {
         uid: profile.uid,
         jobUrl,
@@ -248,10 +283,35 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
       
       setCvCreatorState({ isTailoring: false, step: 3, tailoredData: enrichedTailored, activeTab: 'analysis', applicationId: docRef.id });
       notify.success(t('tailoringSuccess', appLanguage));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-      notify.error(t('tailoringFailed', appLanguage));
+    } catch (error: any) {
+      console.error('Tailoring error:', error);
       setCvCreatorState({ isTailoring: false });
+
+      if (error.message === 'TIMEOUT') {
+        setShowApiErrorModal({
+          isOpen: true,
+          type: 'timeout',
+          message: appLanguage === 'pl' 
+            ? 'Szycie CV na miarę trwa za długo... AI chyba się zaplątało. Spróbuj jeszcze raz!' 
+            : 'Tailoring the CV is taking too long... AI got tangled. Please try again!'
+        });
+        return;
+      }
+
+      const errorStr = JSON.stringify(error);
+      if (errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED')) {
+        setShowApiErrorModal({
+          isOpen: true,
+          type: 'quota',
+          message: appLanguage === 'pl'
+            ? 'AI jest zmęczone (brak kwoty). Daj mu chwilę odetchnąć i spróbuj za minutę.'
+            : 'AI is tired (out of quota). Give it a break and try in a minute.'
+        });
+        return;
+      }
+
+      handleFirestoreError(error, OperationType.CREATE, 'applications');
+      notify.error(t('tailoringFailed', appLanguage));
     }
   };
 
@@ -399,8 +459,9 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="glass rounded-3xl p-12 space-y-8"
+            className="glass rounded-3xl p-12 space-y-8 relative overflow-hidden"
           >
+            <LaborIllusion messages={analysisMessages} isActive={isAnalyzing} />
             <div className="text-center space-y-4">
               <div className="w-20 h-20 bg-[var(--color-accent)]/10 rounded-full flex items-center justify-center mx-auto text-[var(--color-accent)]">
                 <LinkIcon size={40} />
@@ -441,12 +502,12 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                     {isAnalyzing ? (
                       <>
                         <Loader2 className="animate-spin" />
-                        <span>{progressMessage || t('analyze', appLanguage)}</span>
+                        <span>{t('analyze', appLanguage)}...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles size={20} />
-                        <span>{t('analyze', appLanguage)}</span>
+                        <Zap size={20} />
+                        <span>⚡ {t('analyze', appLanguage)}</span>
                       </>
                     )}
                   </button>
@@ -467,12 +528,12 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                     {isAnalyzing ? (
                       <>
                         <Loader2 className="animate-spin" />
-                        <span>{progressMessage || t('analyzeText', appLanguage)}</span>
+                        <span>{t('analyzeText', appLanguage)}...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles size={20} />
-                        <span>{t('analyzeText', appLanguage)}</span>
+                        <Zap size={20} />
+                        <span>⚡ {t('analyzeText', appLanguage)}</span>
                       </>
                     )}
                   </button>
@@ -488,17 +549,21 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="space-y-8"
+            className="space-y-8 relative overflow-hidden rounded-3xl"
           >
+            <LaborIllusion messages={tailoringMessages} isActive={isTailoring} />
             <div className="glass rounded-3xl p-8 space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold">{jobInfo?.basic_info?.job_title}</h3>
-                  <p className="text-[var(--color-accent)]">{jobInfo?.basic_info?.company_name}</p>
+                  <p className="text-[var(--color-accent)] font-medium mb-1">{jobInfo?.basic_info?.company_name}</p>
                 </div>
-                <div className="bg-green-500/10 text-green-600 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
-                  {t('analysisComplete', appLanguage)}
-                </div>
+                {cvCreatorState?.matchAnalysis && (
+                  <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-gradient-to-br from-violet-500/10 to-indigo-600/10 border border-violet-500/20">
+                    <span className="text-2xl font-black text-violet-600 leading-none">{cvCreatorState.matchAnalysis.score}%</span>
+                    <span className="text-[8px] uppercase tracking-widest font-bold text-violet-600/60 mt-1">Dopasowanie</span>
+                  </div>
+                )}
               </div>
 
               {/* Confidence score removed */}
@@ -606,14 +671,16 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                 </div>
               )}
 
-              <button
+              <motion.button
                 onClick={handleTailor}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 disabled={isTailoring}
-                className="w-full py-5 bg-[var(--color-accent)] text-white font-bold rounded-2xl hover:scale-[1.02] transition-all flex items-center justify-center space-x-3"
+                className="w-full py-5 bg-gradient-to-r from-violet-600 to-indigo-600 shadow-xl shadow-violet-500/20 text-white font-bold rounded-2xl flex items-center justify-center space-x-3"
               >
-                {isTailoring ? <Loader2 className="animate-spin" /> : <Sparkles size={24} />}
+                {isTailoring ? <Loader2 className="animate-spin" size={24} /> : <Sparkles size={24} />}
                 <span className="text-lg">{t('tailorCvNow', appLanguage)}</span>
-              </button>
+              </motion.button>
             </div>
           </motion.div>
         )}
@@ -1115,17 +1182,24 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                     </div>
                   )}
                   
-                  {/* Mobile Create Another CV Button */}
+                  {/* Mobile Create Another CV Button (Premium animated) */}
                   {!initialData && (
-                    <div className="lg:hidden pt-4">
-                      <button
+                    <motion.div 
+                      className="lg:hidden pt-4"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                    >
+                      <motion.button
                         onClick={handleReset}
-                        className="w-full py-4 bg-black text-white rounded-2xl font-bold hover:bg-black/80 transition-all flex items-center justify-center gap-2 shadow-lg"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20"
                       >
                         <Plus size={24} />
                         {t('createAnotherCv', appLanguage)}
-                      </button>
-                    </div>
+                      </motion.button>
+                    </motion.div>
                   )}
                 </div>
                 )}
@@ -1191,15 +1265,22 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
                     />
                   </div>
                   {!initialData && (
-                    <div className="pt-4">
-                      <button
+                    <motion.div 
+                      className="pt-4"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                    >
+                      <motion.button
                         onClick={handleReset}
-                        className="w-full py-4 bg-black text-white rounded-2xl font-bold hover:bg-black/80 transition-all flex items-center justify-center gap-2 shadow-lg"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20"
                       >
                         <Plus size={24} />
                         {t('createAnotherCv', appLanguage)}
-                      </button>
-                    </div>
+                      </motion.button>
+                    </motion.div>
                   )}
                 </div>
               )}
@@ -1207,44 +1288,7 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
           </motion.div>
         )}
       </AnimatePresence>
-      <AnimatePresence>
-        {showInvalidJobModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col p-8 space-y-6"
-            >
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-600">
-                <AlertTriangle size={32} />
-              </div>
-              <div className="text-center space-y-2">
-                <h3 className="text-2xl font-bold">System napotkał blokadę strony</h3>
-                <p className="text-black/60">
-                  (np. zabezpieczenie anty-botowe lub stronę logowania). Proszę, wklej treść ogłoszenia ręcznie.
-                </p>
-              </div>
-              <div className="flex flex-col space-y-3">
-                <button
-                  onClick={() => {
-                    setShowInvalidJobModal(false);
-                    setCvCreatorState({ step: 1, isManual: true });
-                  }}
-                  className="w-full py-3 bg-[var(--color-accent)] text-white font-bold rounded-xl hover:scale-[1.02] transition-all"
-                >
-                  Wklej tekst ręcznie
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
       <AnimatePresence>
         {showLowConfidenceModal && (
           <motion.div
@@ -1308,6 +1352,105 @@ export const CvCreator: React.FC<CvCreatorProps> = ({ initialData, onClose }) =>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* FAZA 2 Fallback: Jina Blocked Modal */}
+      <AnimatePresence>
+        {showJinaFallbackModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center"
+            >
+              <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertTriangle size={32} />
+              </div>
+              <h3 className="text-2xl font-bold mb-4">Ups, problem techniczny</h3>
+              <p className="text-black/60 mb-8 text-base leading-relaxed">
+                Portal zablokował automatyczne pobieranie (zabezpieczenia anty-botowe) lub link jest niepoprawny. Skopiuj treść ogłoszenia i wklej ją ręcznie poniżej.
+              </p>
+              <div className="flex flex-col space-y-3">
+                <button
+                  onClick={() => {
+                    setShowJinaFallbackModal(false);
+                    setCvCreatorState({ isManual: true });
+                  }}
+                  className="w-full py-4 bg-[var(--color-accent)] text-white font-bold rounded-2xl hover:scale-[1.02] transition-all shadow-lg shadow-[var(--color-accent)]/20 flex items-center justify-center space-x-2"
+                >
+                  <FileText size={20} />
+                  <span>Wklej tekst ręcznie</span>
+                </button>
+                <button
+                  onClick={() => setShowJinaFallbackModal(false)}
+                  className="w-full py-3 text-black/40 font-bold hover:text-black transition-colors"
+                >
+                  Zamknij
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Zacznij od nowa (Reset) Modal */}
+      <AnimatePresence>
+        {showStartOverModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col p-8 space-y-6"
+            >
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-600">
+                <AlertTriangle size={32} />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-bold">{appLanguage === 'pl' ? 'Czy na pewno chcesz zacząć od nowa?' : 'Are you sure you want to start over?'}</h3>
+                <p className="text-black/60">
+                  {appLanguage === 'pl' 
+                    ? 'Niezapisane zmiany w tym procesie zostaną utracone. Tej akcji nie można cofnąć.' 
+                    : 'Unsaved changes in this process will be lost. This action cannot be undone.'}
+                </p>
+              </div>
+              <div className="flex flex-col space-y-3">
+                <button
+                  onClick={executeReset}
+                  className="w-full py-4 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold rounded-2xl hover:scale-[1.02] transition-transform shadow-lg shadow-red-500/20"
+                >
+                  {appLanguage === 'pl' ? 'Zacznij od nowa' : 'Start over'}
+                </button>
+                <button
+                  onClick={() => setShowStartOverModal(false)}
+                  className="w-full py-4 bg-black/5 text-black/60 font-bold rounded-2xl hover:bg-black/10 transition-colors"
+                >
+                  {t('cancel', appLanguage)}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Premium API Error Modal */}
+      <ApiErrorOverlay
+        isOpen={showApiErrorModal.isOpen}
+        type={showApiErrorModal.type}
+        message={showApiErrorModal.message}
+        onClose={() => setShowApiErrorModal({ ...showApiErrorModal, isOpen: false })}
+        appLanguage={appLanguage}
+      />
     </div>
   );
 };

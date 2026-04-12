@@ -99,53 +99,53 @@ const responseSchema = {
   }
 };
 
+export class JinaBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JinaBlockedError';
+  }
+}
+
 export const fetchJobFromURL = async (apiKey: string, url: string) => {
   const ai = new GoogleGenAI({ apiKey });
   
-  // Pillar 1: Smart Scraping Pipeline (Jina Reader API Fallback)
+  // Pillar 1: Smart Scraping Pipeline (Server-side Jina Reader API)
   let jobText = "";
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
-    const jinaResponse = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, {
-      signal: controller.signal
+    const scrapeResponse = await fetch('/api/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
     });
-    clearTimeout(timeoutId);
-    if (jinaResponse.ok) {
-      jobText = await jinaResponse.text();
+
+    if (scrapeResponse.ok) {
+      const data = await scrapeResponse.json();
+      jobText = data.text;
+    } else {
+      // Server returned an error (blocked, empty, timeout)
+      throw new JinaBlockedError(
+        'Portal blokuje automatyczne pobieranie (zabezpieczenia anty-botowe). Proszę, skopiuj treść ogłoszenia i wklej ją poniżej.'
+      );
     }
   } catch (err) {
-    console.warn("Jina Reader failed, falling back to Gemini Grounding", err);
+    if (err instanceof JinaBlockedError) throw err;
+    // Network error or server unreachable
+    throw new JinaBlockedError(
+      'Nie udało się połączyć z serwerem scrapingu. Proszę, skopiuj treść ogłoszenia i wklej ją poniżej.'
+    );
   }
 
-  let response;
-  
-  if (jobText && jobText.length > 100) {
-    // We have text from Jina, use it directly without googleSearch to save time/tokens
-    response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: `Przeanalizuj treść ogłoszenia o pracę:\n\n${jobText}`,
-      config: {
-        temperature: 0.1,
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema
-      }
-    });
-  } else {
-    // Fallback to Google Grounding
-    response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: `Przeanalizuj treść ogłoszenia o pracę pod tym adresem: ${url}`,
-      config: {
-        temperature: 0.1,
-        systemInstruction,
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema
-      }
-    });
-  }
+  // We have clean text from Jina — send to Gemini for structured extraction
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Przeanalizuj treść ogłoszenia o pracę:\n\n${jobText}`,
+    config: {
+      temperature: 0.0,
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseSchema
+    }
+  });
 
   let responseText = response.text;
   
@@ -173,10 +173,10 @@ export const fetchJobFromURL = async (apiKey: string, url: string) => {
 export const analyzeJobDescription = async (apiKey: string, text: string) => {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: `Analyze this job description and extract key information in JSON format: ${text}`,
+    model: "gemini-3-flash-preview",
+    contents: `Przeanalizuj treść ogłoszenia o pracę:\n\n${text}`,
     config: {
-      temperature: 0.1,
+      temperature: 0.0,
       systemInstruction,
       responseMimeType: "application/json",
       responseSchema
@@ -338,7 +338,7 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
     4. GENDER ADAPTATION: The candidate's gender is "${profile.personalInfo.gender || 'not specified'}". 
        - If the language is Polish, adjust job titles to match the gender (e.g., "Programista" -> "Programistka", "Kierownik" -> "Kierowniczka").
        - Use the provided gender to ensure all job titles in the CV are appropriate.
-    5. PROFESSIONAL SUMMARY: Write a compelling 3-4 sentence summary that directly connects the candidate's top strengths to the job's specific needs. Use strictly the FIRST PERSON.
+    5. PROFESSIONAL SUMMARY: Write a compelling 3-4 sentence summary. You MUST explicitly mention the target job title (adjusted for gender) and the target company name if they are available in the JOB INFO. Connect the candidate's top strengths to the company's specific needs. Use strictly the FIRST PERSON.
     6. SMART SORTING & WEIGHTING: 
        - Assign a 'relevanceScore' (0-100) to each item.
        - For highly relevant experiences, generate a detailed description with many bullet points.
@@ -352,8 +352,8 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
     13. Weaknesses (Obszary do poprawy): 2-3 missing requirements.
     14. Interview Tips (Strategia na rozmowę): 2 tailored tips.
     15. REAL GAP ANALYSIS: Provide specific, actionable gaps with priority. Ignore soft corporate jargon.
-    16. Recommendations: Provide actionable recommendations with priority.
-    17. CRITICAL: Update \`personalInfo.jobTitle\` to match the job title from the job ad, adapted to the candidate's gender.
+    16. Recommendations: Provide actionable recommendations with priority and categorize them strictly into 'skills', 'experience', 'education', or 'other'.
+    17. CRITICAL: Update \`personalInfo.jobTitle\` to EXACTLY match the target job title from the job ad, strictly adapted to the candidate's gender (e.g., if gender is female and job is "Dyrektor", use "Dyrektorka"). This is mandatory.
     
     JOB INFO:
     ${JSON.stringify(jobInfo)}
@@ -365,7 +365,7 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+    model: "gemini-3-flash-preview",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -513,9 +513,10 @@ export const tailorCv = async (apiKey: string, profile: any, jobInfo: any, targe
                   type: Type.OBJECT,
                   properties: {
                     text: { type: Type.STRING },
-                    priority: { type: Type.STRING, enum: ["high", "medium", "low"] }
+                    priority: { type: Type.STRING, enum: ["high", "medium", "low"] },
+                    category: { type: Type.STRING, enum: ["skills", "experience", "education", "other"] }
                   },
-                  required: ["text", "priority"]
+                  required: ["text", "priority", "category"]
                 } 
               },
               strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3-5 full, confidence-building sentences explaining why the candidate is a great fit." },

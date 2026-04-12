@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, XCircle, AlertTriangle, Target, Zap, FileText, ChevronDown, Plus, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle, Target, Zap, FileText, ChevronDown, Plus, Loader2, Wrench, Briefcase as BriefcaseIcon, GraduationCap, Info } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { t } from '../i18n';
 import { fixGapInCv } from '../lib/gemini';
@@ -358,34 +358,66 @@ export const MatchAnalysis: React.FC<MatchAnalysisProps> = ({ analysis, onContin
                 exit={{ height: 0, opacity: 0 }}
                 className="px-8 pb-8"
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-black/5">
-                  {analysis.recommendations?.map((rec, i) => {
-                    const text = typeof rec === 'string' ? rec : rec.text;
-                    const priority = typeof rec === 'string' ? undefined : rec.priority;
-                    return (
-                    <div key={i} className="bg-white/50 border border-black/5 p-6 rounded-2xl text-base flex flex-col space-y-4 shadow-sm hover:shadow-md transition-shadow relative">
-                      {priority && (
-                        <div className={`absolute top-4 right-4 px-2 py-1 rounded text-xs font-bold border ${getPriorityStyles(priority)}`}>
-                          {getPriorityLabel(priority)}
+                <div className="flex flex-col space-y-8 pt-4 border-t border-black/5">
+                  {(() => {
+                    const grouped = (analysis.recommendations || []).reduce((acc: any, rec: any) => {
+                      const cat = (typeof rec === 'string' ? 'other' : rec.category) || 'other';
+                      if (!acc[cat]) acc[cat] = [];
+                      acc[cat].push(rec);
+                      return acc;
+                    }, {} as Record<string, any[]>);
+
+                    const categoryLabels: any = {
+                      skills: { title: appLanguage === 'pl' ? 'Umiejętności do zdobycia' : 'Skills to Acquire', icon: <Wrench size={20}/>, color: 'text-blue-600', bg: 'bg-blue-500/10' },
+                      experience: { title: appLanguage === 'pl' ? 'Braki w doświadczeniu' : 'Experience Gaps', icon: <BriefcaseIcon size={20}/>, color: 'text-purple-600', bg: 'bg-purple-500/10' },
+                      education: { title: appLanguage === 'pl' ? 'Wymogi edukacyjne' : 'Education Requirements', icon: <GraduationCap size={20}/>, color: 'text-orange-600', bg: 'bg-orange-500/10' },
+                      other: { title: appLanguage === 'pl' ? 'Inne rekomendacje' : 'Other Recommendations', icon: <Info size={20}/>, color: 'text-slate-600', bg: 'bg-slate-500/10' }
+                    };
+
+                    const order = ['skills', 'experience', 'education', 'other'];
+
+                    return order.filter(c => grouped[c]?.length > 0).map((catKey) => (
+                      <div key={catKey} className="space-y-4">
+                        <div className={`flex items-center space-x-2 font-bold uppercase tracking-widest text-xs px-4 py-2 rounded-xl w-fit ${categoryLabels[catKey].bg} ${categoryLabels[catKey].color}`}>
+                          {categoryLabels[catKey].icon}
+                          <span>{categoryLabels[catKey].title}</span>
                         </div>
-                      )}
-                      <div className="flex items-start space-x-4 pr-16">
-                        <div className="w-8 h-8 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] flex items-center justify-center shrink-0 font-bold text-sm">
-                          {i + 1}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {grouped[catKey].map((rec: any, idx: number) => {
+                            const text = typeof rec === 'string' ? rec : rec.text;
+                            const priority = typeof rec === 'string' ? undefined : rec.priority;
+                            return (
+                              <div key={idx} className="bg-white/50 border border-black/5 p-6 rounded-2xl text-base flex flex-col space-y-4 shadow-sm hover:shadow-md transition-shadow relative">
+                                {priority && (
+                                  <div className={`absolute top-4 right-4 px-2 py-1 rounded text-[10px] uppercase tracking-wider font-bold border ${getPriorityStyles(priority)}`}>
+                                    {getPriorityLabel(priority)}
+                                  </div>
+                                )}
+                                <div className="flex items-start space-x-4 pr-16">
+                                  <div className={`w-8 h-8 rounded-full ${categoryLabels[catKey].bg} ${categoryLabels[catKey].color} flex items-center justify-center shrink-0 font-bold text-sm`}>
+                                    {idx + 1}
+                                  </div>
+                                  <p className="text-black/80 leading-relaxed pt-1 flex-1 text-sm">{text}</p>
+                                </div>
+                                <div className="flex justify-end pl-12">
+                                  <button
+                                    onClick={() => setFixModal({ isOpen: true, skill: text, type: 'recommendation' })}
+                                    className="px-4 py-2 bg-black/5 hover:bg-[var(--color-accent)] hover:text-white text-black/60 font-bold rounded-xl text-sm transition-colors flex items-center space-x-2"
+                                  >
+                                    <Zap size={16} />
+                                    <span>Zaraz, używałem tego! Dodaj</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <p className="text-black/80 leading-relaxed pt-1 flex-1">{text}</p>
                       </div>
-                      <div className="flex justify-end pl-12">
-                        <button
-                          onClick={() => setFixModal({ isOpen: true, skill: text, type: 'recommendation' })}
-                          className="px-4 py-2 bg-black/5 hover:bg-[var(--color-accent)] hover:text-white text-black/60 font-bold rounded-xl text-sm transition-colors flex items-center space-x-2"
-                        >
-                          <Zap size={16} />
-                          <span>Zaraz, przecież to robiłem! Napraw to</span>
-                        </button>
-                      </div>
-                    </div>
-                  )})}
+                    ));
+                  })()}
+                  {(!analysis.recommendations || analysis.recommendations.length === 0) && (
+                    <p className="text-black/40 text-center py-4">Brak rekomendacji.</p>
+                  )}
                 </div>
               </motion.div>
             )}

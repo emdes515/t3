@@ -31,7 +31,7 @@ export const Settings: React.FC = () => {
 
       <div className="space-y-8">
         <div className="glass rounded-3xl p-8 space-y-6">
-          <div className="flex items-center space-x-3 text-[var(--color-accent)]">
+          <div className="flex items-center space-x-3 text-violet-600">
             <Globe size={24} />
             <h3 className="text-xl font-bold">{t('language', appLanguage)}</h3>
           </div>
@@ -50,7 +50,7 @@ export const Settings: React.FC = () => {
         </div>
 
         <div className="glass rounded-3xl p-8 space-y-6">
-          <div className="flex items-center space-x-3 text-[var(--color-accent)]">
+          <div className="flex items-center space-x-3 text-violet-600">
             <Key size={24} />
             <h3 className="text-xl font-bold">{t('geminiApiConfig', appLanguage)}</h3>
           </div>
@@ -71,7 +71,7 @@ export const Settings: React.FC = () => {
               />
               <button
                 onClick={handleSave}
-                className="px-6 bg-[var(--color-accent)] text-white font-bold rounded-xl hover:scale-105 transition-all flex items-center space-x-2"
+                className="px-6 bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold rounded-xl hover:scale-105 hover:shadow-lg hover:shadow-violet-500/20 transition-all flex items-center space-x-2"
               >
                 <Save size={18} />
                 <span>{t('save', appLanguage)}</span>

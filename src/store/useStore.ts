@@ -110,10 +110,40 @@ export interface CvCreatorState {
   applicationId?: string;
 }
 
+export interface RadarJob {
+  id: string;
+  url: string;
+  title: string;
+  company: string;
+  location?: string;
+  matchScore?: number;
+  aiSummary?: string;
+  matchedSkills?: string[];
+  missingSkills?: string[];
+  jobInfo?: any;
+  isAnalyzed: boolean;
+  foundAt: string;
+  status: 'new' | 'saved' | 'applied' | 'dismissed';
+}
+
+export interface RadarState {
+  isScanning: boolean;
+  scanProgress: { current: number; total: number; message: string };
+  jobs: RadarJob[];
+  lastScanDate: string | null;
+  minMatchScore: number;
+  searchSettings: {
+    jobTitle: string;
+    location: string;
+    workModel: string;
+  };
+}
+
 interface AppState {
   profile: UserProfile | null;
   appLanguage: string;
   cvCreatorState: CvCreatorState | null;
+  radarState: RadarState;
   isAuditingProfile: boolean;
   setProfile: (profile: UserProfile) => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
@@ -121,7 +151,13 @@ interface AppState {
   setCvCreatorState: (state: Partial<CvCreatorState> | null) => void;
   resetCvCreator: () => void;
   setIsAuditingProfile: (isAuditing: boolean) => void;
-  performProfileAudit: (apiKey: string, profile: UserProfile) => Promise<void>;
+  performProfileAudit: (apiKey: string, profile: UserProfile) => Promise<any>;
+  setRadarState: (state: Partial<RadarState>) => void;
+  addRadarJob: (job: RadarJob) => void;
+  updateRadarJob: (jobId: string, updates: Partial<RadarJob>) => void;
+  updateRadarJobStatus: (jobId: string, status: RadarJob['status']) => void;
+  dismissRadarJob: (jobId: string) => void;
+  clearRadarJobs: () => void;
 }
 
 const getBrowserLanguage = () => {
@@ -161,12 +197,26 @@ const defaultCvCreatorState: CvCreatorState = {
   isTailoring: false,
 };
 
+const defaultRadarState: RadarState = {
+  isScanning: false,
+  scanProgress: { current: 0, total: 0, message: '' },
+  jobs: [],
+  lastScanDate: null,
+  minMatchScore: 70,
+  searchSettings: {
+    jobTitle: '',
+    location: '',
+    workModel: 'any'
+  }
+};
+
 export const useStore = create<AppState>()(
   persist(
     (set) => ({
       profile: null,
       appLanguage: getBrowserLanguage(),
       cvCreatorState: defaultCvCreatorState,
+      radarState: defaultRadarState,
       isAuditingProfile: false,
       setProfile: (profile) => set({ profile }),
       updateProfile: (updates) => set((state) => ({
@@ -182,16 +232,46 @@ export const useStore = create<AppState>()(
         set({ isAuditingProfile: true });
         try {
           const result = await auditProfile(apiKey, profile);
-          set((state) => ({
-            profile: state.profile ? { ...state.profile, auditData: result } : null,
-            isAuditingProfile: false
-          }));
+          set({ isAuditingProfile: false });
+          return result;
         } catch (error) {
           console.error('Audit error:', error);
           set({ isAuditingProfile: false });
           throw error;
         }
       },
+      setRadarState: (updates) => set((state) => ({
+        radarState: { ...state.radarState, ...updates }
+      })),
+      addRadarJob: (job) => set((state) => ({
+        radarState: {
+          ...state.radarState,
+          jobs: [job, ...state.radarState.jobs.filter(j => j.url !== job.url)]
+        }
+      })),
+      updateRadarJob: (jobId, updates) => set((state) => ({
+        radarState: {
+          ...state.radarState,
+          jobs: state.radarState.jobs.map(j => 
+            j.id === jobId ? { ...j, ...updates } : j
+          )
+        }
+      })),
+      updateRadarJobStatus: (jobId, status) => set((state) => ({
+        radarState: {
+          ...state.radarState,
+          jobs: state.radarState.jobs.map(j => j.id === jobId ? { ...j, status } : j)
+        }
+      })),
+      dismissRadarJob: (jobId) => set((state) => ({
+        radarState: {
+          ...state.radarState,
+          jobs: state.radarState.jobs.map(j => j.id === jobId ? { ...j, status: 'dismissed' as const } : j)
+        }
+      })),
+      clearRadarJobs: () => set((state) => ({
+        radarState: { ...state.radarState, jobs: [] }
+      })),
     }),
     {
       name: 'tailor-cv-storage',
@@ -202,7 +282,12 @@ export const useStore = create<AppState>()(
           ...state.cvCreatorState,
           isAnalyzing: false,
           isTailoring: false
-        } : null
+        } : null,
+        radarState: {
+          ...state.radarState,
+          isScanning: false,
+          scanProgress: { current: 0, total: 0, message: '' }
+        }
       }),
     }
   )
